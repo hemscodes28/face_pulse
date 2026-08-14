@@ -62,17 +62,19 @@ class FaceDetectorService {
   bool get isProcessing => _isProcessing;
 
   Future<FaceDetectionData?> processCameraImage({
-    required CameraImage image,
+    CameraImage? image,
     required int sensorOrientation,
     required CameraLensDirection lensDirection,
   }) async {
     if (_isProcessing) return null;
     _isProcessing = true;
 
-    final imageSize = Size(image.width.toDouble(), image.height.toDouble());
+    final Size imageSize = (image != null && image.width > 0 && image.height > 0)
+        ? Size(image.width.toDouble(), image.height.toDouble())
+        : const Size(640, 480);
 
     // 1. Attempt Native ML Kit Face Detection if available (Android/iOS)
-    if (_mlKitAvailable && _faceDetector != null) {
+    if (_mlKitAvailable && _faceDetector != null && image != null && image.planes.isNotEmpty) {
       try {
         final inputImage = _bytesToInputImage(
           image: image,
@@ -124,7 +126,7 @@ class FaceDetectorService {
     return fallbackData;
   }
 
-  FaceDetectionData _processFallbackFaceDetection(CameraImage image, Size imageSize) {
+  FaceDetectionData _processFallbackFaceDetection(CameraImage? image, Size imageSize) {
     // Generate centered facial ROI bounding box relative to preview frame
     final double cx = imageSize.width * 0.5;
     final double cy = imageSize.height * 0.42;

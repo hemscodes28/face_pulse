@@ -160,52 +160,75 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
     }
   }
 
+  Timer? _fallbackStreamTimer;
+
   void _startImageStream() {
+    bool nativeStreamStarted = false;
+    _rppgProcessor?.reset();
+
     if (_cameraController != null && _cameraController!.value.isInitialized && !_isStreamingImage) {
-      _isStreamingImage = true;
-      _rppgProcessor?.reset();
       try {
-        _cameraController!.startImageStream((CameraImage image) async {
-          if (!mounted || _state != ScanState.scanning) return;
-
-          final sensorOrientation = _cameras.isNotEmpty ? _cameras[_selectedCameraIndex].sensorOrientation : 0;
-          final lensDirection = _cameras.isNotEmpty ? _cameras[_selectedCameraIndex].lensDirection : CameraLensDirection.front;
-
-          final detection = await _faceDetectorService?.processCameraImage(
-            image: image,
-            sensorOrientation: sensorOrientation,
-            lensDirection: lensDirection,
-          );
-
-          if (detection != null && mounted) {
-            // Stream payload to Python FastAPI backend
-            _webSocketService?.sendFramePayload(detection);
-
-            final rppgResult = _rppgProcessor?.processFrame(
-              image: image,
-              detectionData: detection,
-            );
-
-            setState(() {
-              _faceData = detection;
-              _liveStatusMessage = detection.statusMessage;
-              if (rppgResult != null && rppgResult.isValid && rppgResult.bpm > 0) {
-                _pulseVal = rppgResult.bpm.round().toString();
-                int sys = 110 + (rppgResult.bpm * 0.1).round();
-                int dia = 70 + (rppgResult.bpm * 0.05).round();
-                _bpVal = '$sys / $dia';
-              }
-            });
-          }
+        _cameraController!.startImageStream((CameraImage image) {
+          _processFrameData(image: image);
         });
+        _isStreamingImage = true;
+        nativeStreamStarted = true;
       } catch (e) {
-        debugPrint("Error starting image stream: $e");
+        debugPrint("Native camera startImageStream not supported on this platform: $e");
         _isStreamingImage = false;
       }
+    }
+
+    if (!nativeStreamStarted) {
+      // 30 FPS periodic timer pump for Desktop/Web/Fallback camera streams
+      _fallbackStreamTimer?.cancel();
+      _fallbackStreamTimer = Timer.periodic(const Duration(milliseconds: 33), (_) {
+        if (!mounted || _state != ScanState.scanning) return;
+        _processFrameData(image: null);
+      });
+    }
+  }
+
+  Future<void> _processFrameData({CameraImage? image}) async {
+    if (!mounted || _state != ScanState.scanning) return;
+
+    final sensorOrientation = _cameras.isNotEmpty ? _cameras[_selectedCameraIndex].sensorOrientation : 0;
+    final lensDirection = _cameras.isNotEmpty ? _cameras[_selectedCameraIndex].lensDirection : CameraLensDirection.front;
+
+    final detection = await _faceDetectorService?.processCameraImage(
+      image: image,
+      sensorOrientation: sensorOrientation,
+      lensDirection: lensDirection,
+    );
+
+    if (detection != null && mounted) {
+      // Stream payload to Python FastAPI backend via WebSocket
+      _webSocketService?.sendFramePayload(detection);
+
+      RPPGResult? rppgResult;
+      if (image != null) {
+        rppgResult = _rppgProcessor?.processFrame(
+          image: image,
+          detectionData: detection,
+        );
+      }
+
+      setState(() {
+        _faceData = detection;
+        _liveStatusMessage = detection.statusMessage;
+        if (rppgResult != null && rppgResult.isValid && rppgResult.bpm > 0) {
+          _pulseVal = rppgResult.bpm.round().toString();
+          int sys = 110 + (rppgResult.bpm * 0.1).round();
+          int dia = 70 + (rppgResult.bpm * 0.05).round();
+          _bpVal = '$sys / $dia';
+        }
+      });
     }
   }
 
   void _stopImageStream() {
+    _fallbackStreamTimer?.cancel();
+    _fallbackStreamTimer = null;
     if (_cameraController != null && _isStreamingImage) {
       _isStreamingImage = false;
       try {
