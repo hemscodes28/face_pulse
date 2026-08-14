@@ -18,6 +18,7 @@ class FaceOverlayPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (detectionData == null || !detectionData!.hasFace) {
       _drawGuideOval(canvas, size, const Color(0xFF64748B), "POSITION FACE IN FRAME");
+      _drawHeadPoseHud(canvas, size, 0.0, 0.0, 0.0, "NO FACE DETECTED", const Color(0xFFEF4444));
       return;
     }
 
@@ -34,15 +35,13 @@ class FaceOverlayPainter extends CustomPainter {
     final double scaleX = size.width / imgSize.width;
     final double scaleY = size.height / imgSize.height;
 
-    // Adjust for front camera mirroring if needed
+    // Adjust for front camera mirroring
     double left = isFrontCamera ? (imgSize.width - bbox.right) * scaleX : bbox.left * scaleX;
     double top = bbox.top * scaleY;
     double right = isFrontCamera ? (imgSize.width - bbox.left) * scaleX : bbox.right * scaleX;
     double bottom = bbox.bottom * scaleY;
 
     final scaledBBox = Rect.fromLTRB(left, top, right, bottom);
-
-    // Color theme based on alignment status
     final Color mainColor = _getColorForStatus(data.status);
 
     // 1. Draw Face Bounding Box with rounded corners and subtle fill
@@ -61,7 +60,10 @@ class FaceOverlayPainter extends CustomPainter {
     // 2. Draw Corner Brackets around bounding box
     _drawCornerBrackets(canvas, scaledBBox, mainColor);
 
-    // 3. Draw Contour Points / Face Mesh Nodes
+    // 3. Draw Facial ROI Focus Rings (Forehead, Left Cheek, Right Cheek)
+    _drawRoiFocusRings(canvas, scaledBBox, mainColor);
+
+    // 4. Draw Contour Points / Face Mesh Nodes
     if (data.landmarks.isNotEmpty) {
       final Paint landmarkPaint = Paint()
         ..color = mainColor.withOpacity(0.8)
@@ -70,11 +72,11 @@ class FaceOverlayPainter extends CustomPainter {
       for (final pt in data.landmarks) {
         final double x = isFrontCamera ? (imgSize.width - pt.dx) * scaleX : pt.dx * scaleX;
         final double y = pt.dy * scaleY;
-        canvas.drawCircle(Offset(x, y), 1.8, landmarkPaint);
+        canvas.drawCircle(Offset(x, y), 2.0, landmarkPaint);
       }
     }
 
-    // 4. Draw Animated Scan Laser inside face bounding box
+    // 5. Draw Animated Scan Laser inside face bounding box
     final double laserY = scaledBBox.top + (scaledBBox.height * scanlineProgress);
     final Paint laserPaint = Paint()
       ..shader = LinearGradient(
@@ -90,6 +92,97 @@ class FaceOverlayPainter extends CustomPainter {
       Offset(scaledBBox.right - 8, laserY),
       laserPaint..strokeWidth = 3.0,
     );
+
+    // 6. Render Real-Time Head Position & Pose Diagnostics HUD
+    _drawHeadPoseHud(
+      canvas,
+      size,
+      data.headEulerAngleX ?? 0.0,
+      data.headEulerAngleY ?? 0.0,
+      data.headEulerAngleZ ?? 0.0,
+      data.statusMessage,
+      mainColor,
+    );
+  }
+
+  void _drawRoiFocusRings(Canvas canvas, Rect bbox, Color color) {
+    final Paint roiPaint = Paint()
+      ..color = color.withOpacity(0.6)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+
+    // Forehead ROI Ring
+    final foreheadCenter = Offset(bbox.center.dx, bbox.top + bbox.height * 0.22);
+    canvas.drawCircle(foreheadCenter, bbox.width * 0.12, roiPaint);
+
+    // Left Cheek ROI Ring
+    final leftCheekCenter = Offset(bbox.left + bbox.width * 0.28, bbox.top + bbox.height * 0.58);
+    canvas.drawCircle(leftCheekCenter, bbox.width * 0.10, roiPaint);
+
+    // Right Cheek ROI Ring
+    final rightCheekCenter = Offset(bbox.right - bbox.width * 0.28, bbox.top + bbox.height * 0.58);
+    canvas.drawCircle(rightCheekCenter, bbox.width * 0.10, roiPaint);
+  }
+
+  void _drawHeadPoseHud(
+    Canvas canvas,
+    Size size,
+    double pitch,
+    double yaw,
+    double roll,
+    String statusMessage,
+    Color color,
+  ) {
+    // Draw top HUD container
+    final hudRect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(16, 16, size.width - 32, 44),
+      const Radius.circular(12),
+    );
+
+    final Paint hudBg = Paint()
+      ..color = Colors.black.withOpacity(0.65)
+      ..style = PaintingStyle.fill;
+    canvas.drawRRect(hudRect, hudBg);
+
+    final Paint hudBorder = Paint()
+      ..color = color.withOpacity(0.5)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2;
+    canvas.drawRRect(hudRect, hudBorder);
+
+    // Render HUD text: Pitch / Yaw / Roll
+    final textPainter = TextPainter(
+      text: TextSpan(
+        children: [
+          TextSpan(
+            text: "PITCH: ${pitch.toStringAsFixed(1)}°  ",
+            style: TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.bold),
+          ),
+          TextSpan(
+            text: "YAW: ${yaw.toStringAsFixed(1)}°  ",
+            style: TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.bold),
+          ),
+          TextSpan(
+            text: "ROLL: ${roll.toStringAsFixed(1)}°",
+            style: TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.bold),
+          ),
+        ],
+      ),
+      textDirection: TextDirection.ltr,
+    );
+    textPainter.layout();
+    textPainter.paint(canvas, Offset(28, 22));
+
+    // Status Pill Indicator
+    final statusPainter = TextPainter(
+      text: TextSpan(
+        text: statusMessage,
+        style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+    statusPainter.layout();
+    statusPainter.paint(canvas, Offset(size.width - statusPainter.width - 28, 22));
   }
 
   void _drawCornerBrackets(Canvas canvas, Rect rect, Color color) {
@@ -122,7 +215,6 @@ class FaceOverlayPainter extends CustomPainter {
     final center = Offset(size.width / 2, size.height * 0.42);
     final width = size.width * 0.65;
     final height = size.height * 0.45;
-    final rect = Rect.fromCenter(center: center, width: width, height: height);
 
     final Paint paint = Paint()
       ..color = color.withOpacity(0.4)
@@ -132,8 +224,8 @@ class FaceOverlayPainter extends CustomPainter {
 
     final Path dashPath = Path();
     for (double i = 0; i < 360; i += 12) {
-      final rad = i * (3.14159 / 180);
-      final nextRad = (i + 6) * (3.14159 / 180);
+      final rad = i * (math.pi / 180.0);
+      final nextRad = (i + 6) * (math.pi / 180.0);
       final x1 = center.dx + (width / 2) * math.cos(rad);
       final y1 = center.dy + (height / 2) * math.sin(rad);
       final x2 = center.dx + (width / 2) * math.cos(nextRad);

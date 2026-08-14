@@ -139,6 +139,7 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
         setState(() {
           _cameraInitialized = true;
         });
+        _startImageStream();
       }
     } catch (e) {
       debugPrint("Camera initialize error: $e");
@@ -155,9 +156,6 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
     _stopImageStream();
     _selectedCameraIndex = (_selectedCameraIndex + 1) % _cameras.length;
     await _setupCameraController(_cameras[_selectedCameraIndex]);
-    if (_state == ScanState.scanning) {
-      _startImageStream();
-    }
   }
 
   Timer? _fallbackStreamTimer;
@@ -183,14 +181,14 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
       // 30 FPS periodic timer pump for Desktop/Web/Fallback camera streams
       _fallbackStreamTimer?.cancel();
       _fallbackStreamTimer = Timer.periodic(const Duration(milliseconds: 33), (_) {
-        if (!mounted || _state != ScanState.scanning) return;
+        if (!mounted) return;
         _processFrameData(image: null);
       });
     }
   }
 
   Future<void> _processFrameData({CameraImage? image}) async {
-    if (!mounted || _state != ScanState.scanning) return;
+    if (!mounted) return;
 
     final sensorOrientation = _cameras.isNotEmpty ? _cameras[_selectedCameraIndex].sensorOrientation : 0;
     final lensDirection = _cameras.isNotEmpty ? _cameras[_selectedCameraIndex].lensDirection : CameraLensDirection.front;
@@ -202,8 +200,10 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
     );
 
     if (detection != null && mounted) {
-      // Stream payload to Python FastAPI backend via WebSocket
-      _webSocketService?.sendFramePayload(detection);
+      // Stream payload to Python FastAPI backend via WebSocket during scan
+      if (_state == ScanState.scanning) {
+        _webSocketService?.sendFramePayload(detection);
+      }
 
       RPPGResult? rppgResult;
       if (image != null) {
@@ -459,11 +459,6 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
   }
 
   Widget _buildCameraOrScanArea() {
-    if (_state == ScanState.idle) {
-      // Idle state: rotating radar concentric arches with START button
-      return _buildRadarStartTarget();
-    }
-
     if (_state == ScanState.completed) {
       return Container(
         color: const Color(0xFF0F172A),
@@ -498,7 +493,7 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
       );
     }
 
-    // Scanning State: Show real CameraPreview or Simulated Scan
+    // Active Camera Viewport with Real-Time Face Detection & Head Position Analysis
     return Stack(
       alignment: Alignment.center,
       children: [
@@ -521,7 +516,7 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
                 ),
         ),
 
-        // Real-time Face Mesh & Bounding Box Overlay
+        // Real-time Face Mesh, Bounding Box & Head Position HUD Overlay
         Positioned.fill(
           child: AnimatedBuilder(
             animation: _scanlineCtrl,
@@ -536,68 +531,19 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
           ),
         ),
 
-        // Simulated Face Mesh Overlay (fallback if camera is not active)
-        if (!_cameraInitialized)
-          Positioned.fill(
-            child: CustomPaint(
-              painter: _FaceMeshPainter(_scanlineCtrl.value),
-            ),
-          ),
-
-        // Corner Brackets
-        AnimatedBuilder(
-          animation: _bracketAnim,
-          builder: (_, __) => Stack(
-            children: [
-              _Bracket(top: 24, left: 24, showRight: false, showBottom: false, opacity: _bracketAnim.value),
-              _Bracket(top: 24, right: 24, showLeft: false, showBottom: false, opacity: _bracketAnim.value),
-              _Bracket(bottom: 24, left: 24, showRight: false, showTop: false, opacity: _bracketAnim.value),
-              _Bracket(bottom: 24, right: 24, showLeft: false, showTop: false, opacity: _bracketAnim.value),
-            ],
-          ),
-        ),
-
-        // Dynamic Scan Laser line
-        AnimatedBuilder(
-          animation: _scanlineAnim,
-          builder: (_, __) => Positioned(
-            top: MediaQuery.of(context).size.height * 0.5 * _scanlineAnim.value,
-            left: 0,
-            right: 0,
-            child: Container(
-              height: 3,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Colors.transparent,
-                    const Color(0xFF22D3EE).withOpacity(0.8),
-                    Colors.transparent,
-                  ],
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF22D3EE).withOpacity(0.6),
-                    blurRadius: 10,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-
-        // Stop scanning overlay trigger/button (floating above)
+        // Floating Action Button at Bottom (START SCAN when idle, STOP SCAN when scanning)
         Positioned(
           bottom: 16,
           child: GestureDetector(
-            onTap: _stopScan,
+            onTap: _state == ScanState.scanning ? _stopScan : _startScan,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               decoration: BoxDecoration(
-                color: Colors.redAccent,
+                color: _state == ScanState.scanning ? Colors.redAccent : const Color(0xFF22D3EE),
                 borderRadius: BorderRadius.circular(16),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.redAccent.withOpacity(0.4),
+                    color: (_state == ScanState.scanning ? Colors.redAccent : const Color(0xFF22D3EE)).withOpacity(0.4),
                     blurRadius: 12,
                   ),
                 ],
@@ -605,10 +551,10 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.stop_rounded, color: Colors.white, size: 18),
+                  Icon(_state == ScanState.scanning ? Icons.stop_rounded : Icons.play_arrow_rounded, color: Colors.white, size: 20),
                   const SizedBox(width: 8),
                   Text(
-                    'STOP SCAN',
+                    _state == ScanState.scanning ? 'STOP SCAN' : 'START SCAN',
                     style: AppTheme.sansFont(
                       fontSize: 13,
                       fontWeight: FontWeight.bold,
