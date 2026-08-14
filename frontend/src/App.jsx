@@ -3,13 +3,59 @@ import './index.css';
 
 const API = 'http://127.0.0.1:8000/api/v1';
 
-// ─── Helper ───────────────────────────────────────────────
-function NavBar({ title, onLogout }) {
+// ─── Helpers ───────────────────────────────────────────────
+function computeAge(dobStr) {
+  if (!dobStr) return null;
+  const birth = new Date(dobStr);
+  if (isNaN(birth.getTime())) return null;
+  const now = new Date();
+  let age = now.getFullYear() - birth.getFullYear();
+  const m = now.getMonth() - birth.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < birth.getDate())) {
+    age--;
+  }
+  return age >= 0 ? age : null;
+}
+
+function formatHeight(height_cm, unit = 'cm') {
+  if (!height_cm) return '--';
+  if (unit === 'ft') {
+    const totalInches = height_cm / 2.54;
+    const feet = Math.floor(totalInches / 12);
+    const inches = Math.round(totalInches % 12);
+    return `${feet}' ${inches}"`;
+  }
+  return `${Math.round(height_cm)} cm`;
+}
+
+function formatWeight(weight_kg, unit = 'kg') {
+  if (!weight_kg) return '--';
+  if (unit === 'lbs') {
+    return `${(weight_kg * 2.20462).toFixed(1)} lbs`;
+  }
+  return `${Number(weight_kg).toFixed(1)} kg`;
+}
+
+function getInitials(name) {
+  if (!name) return 'FP';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+function NavBar({ title, onLogout, onProfile, profileInitials, onBrandClick }) {
   return (
     <div className="nav">
-      <div className="nav-brand">Face<span>Pulse</span></div>
+      <div className="nav-brand" onClick={onBrandClick}>
+        Face<span>Pulse</span>
+      </div>
       <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
         {title && <span style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>{title}</span>}
+        {onProfile && (
+          <div className="avatar" title="View Profile" onClick={onProfile}>
+            {profileInitials || '👤'}
+          </div>
+        )}
         {onLogout && (
           <button className="btn btn-ghost btn-sm" onClick={onLogout}>Log out</button>
         )}
@@ -50,7 +96,6 @@ function LineChart({ data = [], color = '#6ee7b7', label = '', unit = '' }) {
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(' ');
 
-  // Filled area: close path along bottom
   const firstX = PAD;
   const lastX  = PAD + (W - PAD * 2);
   const bottom = H - PAD;
@@ -74,7 +119,6 @@ function LineChart({ data = [], color = '#6ee7b7', label = '', unit = '' }) {
             <stop offset="100%" stopColor={color} stopOpacity="0.02" />
           </linearGradient>
         </defs>
-        {/* Grid lines */}
         {[0.25, 0.5, 0.75].map(p => (
           <line key={p}
             x1={PAD} x2={W - PAD}
@@ -83,9 +127,7 @@ function LineChart({ data = [], color = '#6ee7b7', label = '', unit = '' }) {
             stroke="rgba(255,255,255,0.06)" strokeWidth="1"
           />
         ))}
-        {/* Area fill */}
         <polygon points={areaPts} fill={`url(#grad-${label.replace(/\s/g,'')})`} />
-        {/* Line */}
         <polyline
           points={pts}
           fill="none"
@@ -94,7 +136,6 @@ function LineChart({ data = [], color = '#6ee7b7', label = '', unit = '' }) {
           strokeLinejoin="round"
           strokeLinecap="round"
         />
-        {/* Last dot */}
         {(() => {
           const lastPt = pts.split(' ').pop().split(',');
           return <circle cx={lastPt[0]} cy={lastPt[1]} r="3" fill={color} />;
@@ -104,26 +145,40 @@ function LineChart({ data = [], color = '#6ee7b7', label = '', unit = '' }) {
   );
 }
 
-// ─── App ──────────────────────────────────────────────────
+// ─── App Component ────────────────────────────────────────
 export default function App() {
-  const [page, setPage]           = useState('landing'); 
-  // pages: landing | signup | login | onboard-basic | onboard-body | onboard-medical | dashboard | measure | results
+  const [page, setPage]               = useState('landing'); 
+  // pages: landing | signup | login | onboard-basic | onboard-body | onboard-medical | dashboard | profile | measure | results | diary
 
-  const [auth, setAuth]           = useState(null);   // { token, user_id }
-  const [error, setError]         = useState('');
-  const [loading, setLoading]     = useState(false);
+  const [auth, setAuth]               = useState(null);   // { token, user_id }
+  const [error, setError]             = useState('');
+  const [loading, setLoading]         = useState(false);
+
+  // Profile & Unit Preferences
+  const [userProfile, setUserProfile] = useState(null);
+  const [heightUnit, setHeightUnit]   = useState('cm');   // 'cm' | 'ft'
+  const [weightUnit, setWeightUnit]   = useState('kg');   // 'kg' | 'lbs'
+
+  // Guardian State
+  const [guardians, setGuardians]               = useState([]);
+  const [guardianRequests, setGuardianRequests] = useState([]);
+  const [showInviteForm, setShowInviteForm]     = useState(false);
+  const [inviteEmail, setInviteEmail]           = useState('');
+  const [shareResults, setShareResults]         = useState(true);
+  const [shareTrends, setShareTrends]           = useState(true);
+  const [shareAlerts, setShareAlerts]           = useState(true);
 
   // Measurement
-  const [sessionId, setSessionId] = useState(null);
-  const [liveData, setLiveData]   = useState(null);
-  const [scanStatus, setScanStatus] = useState('READY');
-  const [results, setResults]     = useState(null);
+  const [sessionId, setSessionId]     = useState(null);
+  const [liveData, setLiveData]       = useState(null);
+  const [scanStatus, setScanStatus]   = useState('READY');
+  const [results, setResults]         = useState(null);
   const wsRef = useRef(null);
 
   // Diary
   const [diaryDate, setDiaryDate]       = useState(() => new Date().toISOString().slice(0, 10));
   const [diaryRecords, setDiaryRecords] = useState([]);
-  const [expandedDiary, setExpandedDiary] = useState(null); // measurement_id of expanded card
+  const [expandedDiary, setExpandedDiary] = useState(null);
 
   const headers = (extra = {}) => ({
     'Content-Type': 'application/json',
@@ -134,13 +189,99 @@ export default function App() {
   const go = (p) => { setError(''); setPage(p); };
 
   const logout = () => {
-    setAuth(null); setSessionId(null); setLiveData(null);
-    setScanStatus('READY'); setResults(null); go('landing');
+    setAuth(null); setUserProfile(null); setSessionId(null); setLiveData(null);
+    setScanStatus('READY'); setResults(null); setGuardians([]); go('landing');
     if (wsRef.current) wsRef.current.close();
   };
 
-  // Cleanup ws on unmount
   useEffect(() => () => { if (wsRef.current) wsRef.current.close(); }, []);
+
+  // Fetch profile and guardians whenever auth changes or user enters dashboard/profile
+  useEffect(() => {
+    if (auth && auth.user_id) {
+      fetchProfile();
+      fetchGuardians();
+    }
+  }, [auth]);
+
+  // ── Profile API Calls ───────────────────────────────────
+  async function fetchProfile() {
+    if (!auth) return;
+    try {
+      const res = await fetch(`${API}/users/${auth.user_id}/profile`, { headers: headers() });
+      if (res.ok) {
+        const data = await res.json();
+        setUserProfile(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch profile', err);
+    }
+  }
+
+  async function fetchGuardians() {
+    if (!auth) return;
+    try {
+      const [gRes, reqRes] = await Promise.all([
+        fetch(`${API}/guardians`, { headers: headers() }),
+        fetch(`${API}/guardians/requests`, { headers: headers() })
+      ]);
+      if (gRes.ok) setGuardians(await gRes.json());
+      if (reqRes.ok) setGuardianRequests(await reqRes.json());
+    } catch (err) {
+      console.error('Failed to fetch guardians', err);
+    }
+  }
+
+  async function handleInviteGuardian(e) {
+    e.preventDefault();
+    setLoading(true); setError('');
+    try {
+      const res = await fetch(`${API}/guardians/invite`, {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify({
+          guardian_email: inviteEmail,
+          share_results: shareResults,
+          share_trends: shareTrends,
+          share_alerts: shareAlerts
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Invite failed');
+      setInviteEmail('');
+      setShowInviteForm(false);
+      fetchGuardians();
+    } catch (err) { setError(err.message); }
+    setLoading(false);
+  }
+
+  async function handleRemoveGuardian(relId) {
+    if (!confirm('Are you sure you want to revoke access for this guardian?')) return;
+    setLoading(true); setError('');
+    try {
+      const res = await fetch(`${API}/guardians/${relId}`, {
+        method: 'DELETE',
+        headers: headers()
+      });
+      if (!res.ok) throw new Error((await res.json()).detail || 'Failed to remove');
+      fetchGuardians();
+    } catch (err) { setError(err.message); }
+    setLoading(false);
+  }
+
+  async function handleRespondRequest(relId, action) {
+    setLoading(true); setError('');
+    try {
+      const res = await fetch(`${API}/guardians/requests/${relId}/respond`, {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify({ action })
+      });
+      if (!res.ok) throw new Error((await res.json()).detail || 'Failed to respond');
+      fetchGuardians();
+    } catch (err) { setError(err.message); }
+    setLoading(false);
+  }
 
   // ── Auth handlers ──────────────────────────────────────
   async function handleSignup(e) {
@@ -222,19 +363,18 @@ export default function App() {
     const fd = new FormData(e.target);
     setLoading(true); setError('');
     try {
-      // update blood group
       const r1 = await fetch(`${API}/users/${auth.user_id}/profile/medical`, {
         method: 'PUT', headers: headers(),
         body: JSON.stringify({ blood_group: fd.get('blood_group') }),
       });
       if (!r1.ok) throw new Error((await r1.json()).detail || 'Update failed');
 
-      // mark onboarding complete
       const r2 = await fetch(`${API}/users/${auth.user_id}/onboarding/complete`, {
         method: 'POST', headers: headers(),
       });
       if (!r2.ok) throw new Error((await r2.json()).detail || 'Complete failed');
 
+      fetchProfile();
       go('dashboard');
     } catch (err) { setError(err.message); }
     setLoading(false);
@@ -473,242 +613,534 @@ export default function App() {
   );
 
   // ── Dashboard ──────────────────────────────────────────
-  if (page === 'dashboard') return (
-    <div className="page">
-      <div className="card">
-        <NavBar title={`uid: ${auth?.user_id?.slice(0,8)}...`} onLogout={logout} />
-        <div className="card-title">Dashboard</div>
-        <div className="card-sub">Ready for your measurement?</div>
-        {error && <div className="alert alert-error">{error}</div>}
-        <button className="btn btn-primary" onClick={startSession} disabled={loading}>
-          {loading ? 'Starting...' : '▶  Start New Scan'}
-        </button>
-        <button className="btn btn-ghost" style={{ marginTop: 12 }} onClick={() => {
-          const today = new Date().toISOString().slice(0, 10);
-          fetchDiary(today);
-          go('diary');
-        }} disabled={loading}>
-          📅 Open Vitals Diary
-        </button>
-      </div>
-    </div>
-  );
+  if (page === 'dashboard') {
+    const age = computeAge(userProfile?.date_of_birth);
+    const initials = getInitials(userProfile?.full_name);
 
-  // ── Diary ───────────────────────────────────────────────
-  if (page === 'diary') return (
-    <div className="page">
-      <div className="card">
-        <NavBar title="Diary" onLogout={logout} />
-        <div className="card-title">Vitals Diary</div>
-        <div className="card-sub">Select a date to view past measurements</div>
-
-        <div className="form-group" style={{ marginTop: 16 }}>
-          <label>Select Date</label>
-          <input 
-            type="date" 
-            value={diaryDate} 
-            onChange={(e) => {
-              const selected = e.target.value;
-              setDiaryDate(selected);
-              if (selected) fetchDiary(selected);
-            }} 
+    return (
+      <div className="page">
+        <div className="card">
+          <NavBar 
+            onLogout={logout} 
+            onProfile={() => go('profile')} 
+            profileInitials={initials}
+            onBrandClick={() => go('dashboard')}
           />
-        </div>
 
-        {error && <div className="alert alert-error" style={{ marginTop: 12 }}>{error}</div>}
+          {/* Profile Summary Card */}
+          <div className="profile-card">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div className="avatar" style={{ width: 44, height: 44, fontSize: '1.1rem' }} onClick={() => go('profile')}>
+                  {initials}
+                </div>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: '1.15rem' }}>{userProfile?.full_name || 'FacePulse User'}</div>
+                  <div style={{ color: 'var(--muted)', fontSize: '0.8rem' }}>{userProfile?.email}</div>
+                </div>
+              </div>
+              <button className="btn btn-ghost btn-sm" onClick={() => go('profile')}>
+                ⚙ Profile
+              </button>
+            </div>
 
-        {loading ? (
-          <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--muted)' }}>
-            Loading diary records...
-          </div>
-        ) : diaryRecords.length === 0 ? (
-          <div className="instruction-box" style={{ marginTop: 16, textAlign: 'center' }}>
-            No measurements recorded on {diaryDate}.
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 16 }}>
-            {diaryRecords.map((m, idx) => (
-              <div key={m.measurement_id || idx}
-                className="metric-item"
-                style={{ textAlign: 'left', padding: '16px', cursor: 'pointer', transition: 'box-shadow 0.2s' }}
-                onClick={() => setExpandedDiary(expandedDiary === m.measurement_id ? null : m.measurement_id)}
-              >
-                {/* Header row */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: '0.8rem', color: 'var(--muted)' }}>
-                  <span>Session: {m.measurement_id?.slice(0, 12)}...</span>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    {m.recorded_at ? new Date(m.recorded_at).toLocaleTimeString() : ''}
-                    <span style={{ fontSize: '0.7rem', opacity: 0.6 }}>{expandedDiary === m.measurement_id ? '▲ hide' : '▼ graphs'}</span>
+            {/* Vitals & Demographics Badges */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: '0.85rem' }}>
+              <div className="metric-item" style={{ padding: 10 }}>
+                <div className="metric-label">Age & DOB</div>
+                <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>
+                  {age !== null ? `${age} yrs` : '--'}
+                  <span style={{ fontSize: '0.75rem', color: 'var(--muted)', fontWeight: 500, marginLeft: 4 }}>
+                    ({userProfile?.date_of_birth || 'N/A'})
                   </span>
                 </div>
+              </div>
 
-                {/* Vital badges */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-                  <div>
-                    <div className="metric-label">Heart Rate</div>
-                    <div className="metric-value" style={{ fontSize: '1.1rem' }}>{m.heart_rate} bpm</div>
-                  </div>
-                  <div>
-                    <div className="metric-label">SpO2</div>
-                    <div className="metric-value" style={{ fontSize: '1.1rem' }}>{m.spo2}%</div>
-                  </div>
-                  <div>
-                    <div className="metric-label">Blood Pressure</div>
-                    <div className="metric-value" style={{ fontSize: '1.1rem' }}>{m.systolic}/{m.diastolic}</div>
+              <div className="metric-item" style={{ padding: 10 }}>
+                <div className="metric-label">Sex & Blood Group</div>
+                <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>
+                  {userProfile?.gender || '--'} · <span style={{ color: '#f87171' }}>{userProfile?.blood_group || '--'}</span>
+                </div>
+              </div>
+
+              <div className="metric-item" style={{ padding: 10 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div className="metric-label">Height</div>
+                  <div className="unit-toggle">
+                    <button className={`unit-btn ${heightUnit === 'cm' ? 'active' : ''}`} onClick={() => setHeightUnit('cm')}>cm</button>
+                    <button className={`unit-btn ${heightUnit === 'ft' ? 'active' : ''}`} onClick={() => setHeightUnit('ft')}>ft</button>
                   </div>
                 </div>
-
-                {/* Expanded graphs */}
-                {expandedDiary === m.measurement_id && (
-                  <div style={{ marginTop: 20, borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 16 }}
-                    onClick={e => e.stopPropagation()}
-                  >
-                    <LineChart
-                      data={m.hr_series}
-                      color="#f87171"
-                      label="Heart Rate"
-                      unit=" bpm"
-                    />
-                    <LineChart
-                      data={m.spo2_series}
-                      color="#60a5fa"
-                      label="SpO2"
-                      unit="%"
-                    />
-                    <LineChart
-                      data={m.bp_series ? m.bp_series.map(pts => pts.length ? pts.reduce((a,b)=>a+b,0)/pts.length : 0) : []}
-                      color="#a78bfa"
-                      label="BP avg waveform"
-                      unit=" mmHg"
-                    />
-                  </div>
-                )}
+                <div style={{ fontWeight: 700, fontSize: '1.05rem', marginTop: 4 }}>
+                  {formatHeight(userProfile?.height_cm, heightUnit)}
+                </div>
               </div>
-            ))}
-          </div>
-        )}
 
-        <button className="btn btn-ghost" style={{ marginTop: 24 }} onClick={() => go('dashboard')}>
-          ← Back to Dashboard
-        </button>
+              <div className="metric-item" style={{ padding: 10 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div className="metric-label">Weight</div>
+                  <div className="unit-toggle">
+                    <button className={`unit-btn ${weightUnit === 'kg' ? 'active' : ''}`} onClick={() => setWeightUnit('kg')}>kg</button>
+                    <button className={`unit-btn ${weightUnit === 'lbs' ? 'active' : ''}`} onClick={() => setWeightUnit('lbs')}>lbs</button>
+                  </div>
+                </div>
+                <div style={{ fontWeight: 700, fontSize: '1.05rem', marginTop: 4 }}>
+                  {formatWeight(userProfile?.weight_kg, weightUnit)}
+                </div>
+              </div>
+            </div>
+
+            {userProfile?.bmi && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, padding: '8px 12px', background: 'rgba(255,255,255,0.03)', borderRadius: 8 }}>
+                <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>Body Mass Index (BMI):</span>
+                <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>
+                  {userProfile.bmi} <span className="pill" style={{ marginLeft: 6 }}>{userProfile.bmi_classification || 'Normal'}</span>
+                </span>
+              </div>
+            )}
+          </div>
+
+          <div className="card-title">Ready for your scan?</div>
+          <div className="card-sub">Measure heart rate, blood pressure, and oxygen saturation</div>
+
+          {error && <div className="alert alert-error">{error}</div>}
+
+          <button className="btn btn-primary" onClick={startSession} disabled={loading}>
+            {loading ? 'Starting...' : '▶  Start New Scan'}
+          </button>
+          
+          <button className="btn btn-ghost" style={{ marginTop: 12 }} onClick={() => {
+            const today = new Date().toISOString().slice(0, 10);
+            fetchDiary(today);
+            go('diary');
+          }} disabled={loading}>
+            📅 Open Vitals Diary
+          </button>
+        </div>
       </div>
-    </div>
-  );
+    );
+  }
+
+  // ── Profile Page ───────────────────────────────────────
+  if (page === 'profile') {
+    const age = computeAge(userProfile?.date_of_birth);
+    const initials = getInitials(userProfile?.full_name);
+
+    return (
+      <div className="page">
+        <div className="card">
+          <NavBar 
+            onLogout={logout} 
+            onProfile={() => go('profile')} 
+            profileInitials={initials}
+            onBrandClick={() => go('dashboard')}
+          />
+
+          {/* Large Avatar Header */}
+          <div style={{ textAlign: 'center', marginBottom: 20 }}>
+            <div className="avatar-lg">{initials}</div>
+            <div className="card-title" style={{ marginBottom: 2 }}>{userProfile?.full_name || 'My Profile'}</div>
+            <div style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>{userProfile?.email}</div>
+          </div>
+
+          {error && <div className="alert alert-error" style={{ marginBottom: 16 }}>{error}</div>}
+
+          {/* Unit Toggle Preferences */}
+          <div className="profile-card" style={{ marginBottom: 16 }}>
+            <div className="metric-label" style={{ marginBottom: 12 }}>⚙️ Unit Preferences</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.85rem' }}>Height Unit:</span>
+                <div className="unit-toggle">
+                  <button className={`unit-btn ${heightUnit === 'cm' ? 'active' : ''}`} onClick={() => setHeightUnit('cm')}>cm</button>
+                  <button className={`unit-btn ${heightUnit === 'ft' ? 'active' : ''}`} onClick={() => setHeightUnit('ft')}>ft/in</button>
+                </div>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.85rem' }}>Weight Unit:</span>
+                <div className="unit-toggle">
+                  <button className={`unit-btn ${weightUnit === 'kg' ? 'active' : ''}`} onClick={() => setWeightUnit('kg')}>kg</button>
+                  <button className={`unit-btn ${weightUnit === 'lbs' ? 'active' : ''}`} onClick={() => setWeightUnit('lbs')}>lbs</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Personal & Health Details */}
+          <div className="profile-card" style={{ marginBottom: 16 }}>
+            <div className="metric-label" style={{ marginBottom: 12 }}>📋 Demographics & Biometrics</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, fontSize: '0.9rem' }}>
+              <div>
+                <span style={{ color: 'var(--muted)', fontSize: '0.75rem', display: 'block' }}>DATE OF BIRTH</span>
+                <strong>{userProfile?.date_of_birth || 'Not set'}</strong>
+              </div>
+              <div>
+                <span style={{ color: 'var(--muted)', fontSize: '0.75rem', display: 'block' }}>COMPUTED AGE</span>
+                <strong>{age !== null ? `${age} years old` : 'N/A'}</strong>
+              </div>
+              <div>
+                <span style={{ color: 'var(--muted)', fontSize: '0.75rem', display: 'block' }}>SEX / GENDER</span>
+                <strong>{userProfile?.gender || 'Not set'}</strong>
+              </div>
+              <div>
+                <span style={{ color: 'var(--muted)', fontSize: '0.75rem', display: 'block' }}>BLOOD GROUP</span>
+                <strong style={{ color: '#f87171' }}>{userProfile?.blood_group || 'Not set'}</strong>
+              </div>
+              <div>
+                <span style={{ color: 'var(--muted)', fontSize: '0.75rem', display: 'block' }}>HEIGHT ({heightUnit.toUpperCase()})</span>
+                <strong>{formatHeight(userProfile?.height_cm, heightUnit)}</strong>
+              </div>
+              <div>
+                <span style={{ color: 'var(--muted)', fontSize: '0.75rem', display: 'block' }}>WEIGHT ({weightUnit.toUpperCase()})</span>
+                <strong>{formatWeight(userProfile?.weight_kg, weightUnit)}</strong>
+              </div>
+            </div>
+          </div>
+
+          {/* Guardians & Family Access */}
+          <div className="profile-card" style={{ marginBottom: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <div className="metric-label" style={{ marginBottom: 0 }}>🛡 Guardians ({guardians.length})</div>
+              <button className="btn btn-ghost btn-sm" onClick={() => setShowInviteForm(!showInviteForm)}>
+                {showInviteForm ? 'Cancel' : '+ Add Guardian'}
+              </button>
+            </div>
+
+            {/* Invite Form */}
+            {showInviteForm && (
+              <form onSubmit={handleInviteGuardian} style={{ background: 'var(--surface)', padding: 14, borderRadius: 8, marginBottom: 14, border: '1px solid var(--border)' }}>
+                <div className="form-group" style={{ marginBottom: 10 }}>
+                  <label>Guardian User Email</label>
+                  <input 
+                    type="email" 
+                    placeholder="guardian@example.com" 
+                    value={inviteEmail} 
+                    onChange={e => setInviteEmail(e.target.value)} 
+                    required 
+                  />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: '0.8rem', color: 'var(--muted)', marginBottom: 12 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', textTransform: 'none' }}>
+                    <input type="checkbox" checked={shareResults} onChange={e => setShareResults(e.target.checked)} style={{ width: 'auto' }} />
+                    Share Measurement Results
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', textTransform: 'none' }}>
+                    <input type="checkbox" checked={shareTrends} onChange={e => setShareTrends(e.target.checked)} style={{ width: 'auto' }} />
+                    Share Vitals Diary & Trends
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', textTransform: 'none' }}>
+                    <input type="checkbox" checked={shareAlerts} onChange={e => setShareAlerts(e.target.checked)} style={{ width: 'auto' }} />
+                    Share Vitals Anomaly Alerts
+                  </label>
+                </div>
+                <button className="btn btn-primary btn-sm" type="submit" disabled={loading}>
+                  {loading ? 'Inviting...' : 'Send Guardian Invite'}
+                </button>
+              </form>
+            )}
+
+            {/* Guardians List */}
+            {guardians.length === 0 ? (
+              <div style={{ color: 'var(--muted)', fontSize: '0.85rem', textAlign: 'center', padding: '10px 0' }}>
+                No guardians linked. Add a trusted family member or doctor to share your health metrics.
+              </div>
+            ) : (
+              <div>
+                {guardians.map(g => (
+                  <div key={g.id} className="guardian-item" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>
+                        {g.guardian_name || g.guardian_email}
+                        <span className={`badge ${g.status === 'ACCEPTED' ? 'badge-completed' : 'badge-processing'}`} style={{ marginLeft: 8, fontSize: '0.65rem' }}>
+                          {g.status}
+                        </span>
+                      </div>
+                      <div style={{ color: 'var(--muted)', fontSize: '0.75rem', marginTop: 2 }}>{g.guardian_email}</div>
+                      <div style={{ marginTop: 6 }}>
+                        {g.share_results && <span className="pill">Results</span>}
+                        {g.share_trends && <span className="pill">Trends</span>}
+                        {g.share_alerts && <span className="pill">Alerts</span>}
+                      </div>
+                    </div>
+                    <button 
+                      className="btn btn-ghost btn-sm" 
+                      style={{ color: '#f87171', borderColor: '#ef444450' }}
+                      onClick={() => handleRemoveGuardian(g.id)}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Incoming Requests */}
+            {guardianRequests.length > 0 && (
+              <div style={{ marginTop: 16, borderTop: '1px solid var(--border)', paddingTop: 14 }}>
+                <div className="metric-label">📩 Incoming Requests ({guardianRequests.length})</div>
+                {guardianRequests.map(r => (
+                  <div key={r.id} className="guardian-item" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>{r.ward_name || r.ward_email}</div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>Wants you as their guardian</div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button className="btn btn-success btn-sm" onClick={() => handleRespondRequest(r.id, 'ACCEPT')}>Accept</button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => handleRespondRequest(r.id, 'REJECT')}>Reject</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <button className="btn btn-ghost" onClick={() => go('dashboard')}>
+            ← Back to Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Diary ───────────────────────────────────────────────
+  if (page === 'diary') {
+    const initials = getInitials(userProfile?.full_name);
+    return (
+      <div className="page">
+        <div className="card">
+          <NavBar 
+            title="Diary" 
+            onLogout={logout} 
+            onProfile={() => go('profile')} 
+            profileInitials={initials}
+            onBrandClick={() => go('dashboard')}
+          />
+          <div className="card-title">Vitals Diary</div>
+          <div className="card-sub">Select a date to view past measurements</div>
+
+          <div className="form-group" style={{ marginTop: 16 }}>
+            <label>Select Date</label>
+            <input 
+              type="date" 
+              value={diaryDate} 
+              onChange={(e) => {
+                const selected = e.target.value;
+                setDiaryDate(selected);
+                if (selected) fetchDiary(selected);
+              }} 
+            />
+          </div>
+
+          {error && <div className="alert alert-error" style={{ marginTop: 12 }}>{error}</div>}
+
+          {loading ? (
+            <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--muted)' }}>
+              Loading diary records...
+            </div>
+          ) : diaryRecords.length === 0 ? (
+            <div className="instruction-box" style={{ marginTop: 16, textAlign: 'center' }}>
+              No measurements recorded on {diaryDate}.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 16 }}>
+              {diaryRecords.map((m, idx) => (
+                <div key={m.measurement_id || idx}
+                  className="metric-item"
+                  style={{ textAlign: 'left', padding: '16px', cursor: 'pointer', transition: 'box-shadow 0.2s' }}
+                  onClick={() => setExpandedDiary(expandedDiary === m.measurement_id ? null : m.measurement_id)}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: '0.8rem', color: 'var(--muted)' }}>
+                    <span>Session: {m.measurement_id?.slice(0, 12)}...</span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {m.recorded_at ? new Date(m.recorded_at).toLocaleTimeString() : ''}
+                      <span style={{ fontSize: '0.7rem', opacity: 0.6 }}>{expandedDiary === m.measurement_id ? '▲ hide' : '▼ graphs'}</span>
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                    <div>
+                      <div className="metric-label">Heart Rate</div>
+                      <div className="metric-value" style={{ fontSize: '1.1rem' }}>{m.heart_rate} bpm</div>
+                    </div>
+                    <div>
+                      <div className="metric-label">SpO2</div>
+                      <div className="metric-value" style={{ fontSize: '1.1rem' }}>{m.spo2}%</div>
+                    </div>
+                    <div>
+                      <div className="metric-label">Blood Pressure</div>
+                      <div className="metric-value" style={{ fontSize: '1.1rem' }}>{m.systolic}/{m.diastolic}</div>
+                    </div>
+                  </div>
+
+                  {expandedDiary === m.measurement_id && (
+                    <div style={{ marginTop: 20, borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 16 }}
+                      onClick={e => e.stopPropagation()}
+                    >
+                      <LineChart
+                        data={m.hr_series}
+                        color="#f87171"
+                        label="Heart Rate"
+                        unit=" bpm"
+                      />
+                      <LineChart
+                        data={m.spo2_series}
+                        color="#60a5fa"
+                        label="SpO2"
+                        unit="%"
+                      />
+                      <LineChart
+                        data={m.bp_series ? m.bp_series.map(pts => pts.length ? pts.reduce((a,b)=>a+b,0)/pts.length : 0) : []}
+                        color="#a78bfa"
+                        label="BP avg waveform"
+                        unit=" mmHg"
+                      />
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          <button className="btn btn-ghost" style={{ marginTop: 24 }} onClick={() => go('dashboard')}>
+            ← Back to Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // ── Measure ────────────────────────────────────────────
-  if (page === 'measure') return (
-    <div className="page">
-      <div className="card">
-        <NavBar title="Measuring" onLogout={logout} />
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div className="card-title" style={{ marginBottom: 0 }}>Live Scan</div>
-          {scanStatus !== 'READY' && (
-            <span className={`badge badge-${scanStatus.toLowerCase()}`}>{scanStatus}</span>
+  if (page === 'measure') {
+    const initials = getInitials(userProfile?.full_name);
+    return (
+      <div className="page">
+        <div className="card">
+          <NavBar 
+            title="Measuring" 
+            onLogout={logout} 
+            onProfile={() => go('profile')} 
+            profileInitials={initials}
+            onBrandClick={() => go('dashboard')}
+          />
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div className="card-title" style={{ marginBottom: 0 }}>Live Scan</div>
+            {scanStatus !== 'READY' && (
+              <span className={`badge badge-${scanStatus.toLowerCase()}`}>{scanStatus}</span>
+            )}
+          </div>
+          <p style={{ color: 'var(--muted)', fontSize: '0.8rem', marginTop: 4 }}>
+            Session: {sessionId?.slice(0, 18)}...
+          </p>
+
+          {scanStatus === 'READY' && (
+            <button className="btn btn-primary" style={{ marginTop: 24 }} onClick={startScan}>
+              Start Scan
+            </button>
           )}
-        </div>
-        <p style={{ color: 'var(--muted)', fontSize: '0.8rem', marginTop: 4 }}>
-          Session: {sessionId?.slice(0, 18)}...
-        </p>
 
-        {scanStatus === 'READY' && (
-          <button className="btn btn-primary" style={{ marginTop: 24 }} onClick={startScan}>
-            Start Scan
-          </button>
-        )}
+          {scanStatus !== 'READY' && (
+            <>
+              <div className="instruction-box">
+                {scanStatus === 'PROCESSING'
+                  ? '⏳ Analyzing data, please wait...'
+                  : scanStatus === 'COMPLETED'
+                  ? '✅ Measurement complete!'
+                  : liveData?.instruction || 'Initializing...'}
+              </div>
 
-        {scanStatus !== 'READY' && (
-          <>
-            <div className="instruction-box">
-              {scanStatus === 'PROCESSING'
-                ? '⏳ Analyzing data, please wait...'
-                : scanStatus === 'COMPLETED'
-                ? '✅ Measurement complete!'
-                : liveData?.instruction || 'Initializing...'}
-            </div>
-
-            <div className="metrics-grid">
-              <div className="metric-item">
-                <div className="metric-label">Elapsed</div>
-                <div className="metric-value">{liveData ? `${liveData.elapsed_time_sec}s` : '0s'}</div>
-              </div>
-              <div className="metric-item">
-                <div className="metric-label">Quality</div>
-                <div className="metric-value">{liveData?.quality?.overall_score ?? '--'}</div>
-              </div>
-              <div className="metric-item">
-                <div className="metric-label">Heart Rate</div>
-                <div className="metric-value">{liveData?.hr ? `${liveData.hr} bpm` : '--'}</div>
-              </div>
-              <div className="metric-item">
-                <div className="metric-label">SpO2</div>
-                <div className="metric-value">{liveData?.spo2 ? `${liveData.spo2}%` : '--'}</div>
-              </div>
-              <div className="metric-item" style={{ gridColumn: '1/-1' }}>
-                <div className="metric-label">BP Graph Points</div>
-                <div className="metric-value" style={{ fontSize: '0.95rem', fontWeight: 500 }}>
-                  {liveData?.bp ? liveData.bp.join('  ·  ') : '--'}
+              <div className="metrics-grid">
+                <div className="metric-item">
+                  <div className="metric-label">Elapsed</div>
+                  <div className="metric-value">{liveData ? `${liveData.elapsed_time_sec}s` : '0s'}</div>
+                </div>
+                <div className="metric-item">
+                  <div className="metric-label">Quality</div>
+                  <div className="metric-value">{liveData?.quality?.overall_score ?? '--'}</div>
+                </div>
+                <div className="metric-item">
+                  <div className="metric-label">Heart Rate</div>
+                  <div className="metric-value">{liveData?.hr ? `${liveData.hr} bpm` : '--'}</div>
+                </div>
+                <div className="metric-item">
+                  <div className="metric-label">SpO2</div>
+                  <div className="metric-value">{liveData?.spo2 ? `${liveData.spo2}%` : '--'}</div>
+                </div>
+                <div className="metric-item" style={{ gridColumn: '1/-1' }}>
+                  <div className="metric-label">BP Graph Points</div>
+                  <div className="metric-value" style={{ fontSize: '0.95rem', fontWeight: 500 }}>
+                    {liveData?.bp ? liveData.bp.join('  ·  ') : '--'}
+                  </div>
                 </div>
               </div>
-            </div>
-          </>
-        )}
+            </>
+          )}
 
-        {scanStatus === 'COMPLETED' && (
-          <button className="btn btn-success" style={{ marginTop: 20 }} onClick={fetchResults} disabled={loading}>
-            {loading ? 'Loading...' : 'Click here for Results →'}
-          </button>
-        )}
+          {scanStatus === 'COMPLETED' && (
+            <button className="btn btn-success" style={{ marginTop: 20 }} onClick={fetchResults} disabled={loading}>
+              {loading ? 'Loading...' : 'Click here for Results →'}
+            </button>
+          )}
 
-        {error && <div className="alert alert-error" style={{ marginTop: 12 }}>{error}</div>}
+          {error && <div className="alert alert-error" style={{ marginTop: 12 }}>{error}</div>}
+        </div>
       </div>
-    </div>
-  );
+    );
+  }
 
   // ── Results ────────────────────────────────────────────
-  if (page === 'results') return (
-    <div className="page">
-      <div className="card">
-        <NavBar title="Results" onLogout={logout} />
-        <div className="card-title" style={{ color: 'var(--success)' }}>Results</div>
-        <div className="card-sub">Session complete — {sessionId?.slice(0, 18)}...</div>
+  if (page === 'results') {
+    const initials = getInitials(userProfile?.full_name);
+    return (
+      <div className="page">
+        <div className="card">
+          <NavBar 
+            title="Results" 
+            onLogout={logout} 
+            onProfile={() => go('profile')} 
+            profileInitials={initials}
+            onBrandClick={() => go('dashboard')}
+          />
+          <div className="card-title" style={{ color: 'var(--success)' }}>Results</div>
+          <div className="card-sub">Session complete — {sessionId?.slice(0, 18)}...</div>
 
-        {results && (
-          <>
-            <div className="result-row">
-              <span className="result-label">Heart Rate</span>
-              <span className="result-val">{results.vitals?.hr} bpm</span>
-            </div>
-            <div className="result-row">
-              <span className="result-label">Blood Pressure</span>
-              <span className="result-val">{results.vitals?.bp}</span>
-            </div>
-            <div className="result-row">
-              <span className="result-label">SpO2</span>
-              <span className="result-val">{results.vitals?.spo2}%</span>
-            </div>
-            <div className="result-row">
-              <span className="result-label">Avg Quality</span>
-              <span className="result-val">{results.quality_summary?.avg_quality}</span>
-            </div>
-            <div className="result-row">
-              <span className="result-label">Duration</span>
-              <span className="result-val">{results.duration_sec}s</span>
-            </div>
-            <div className="result-row">
-              <span className="result-label">Analysis</span>
-              <span className="result-val" style={{ fontSize: '0.9rem', textAlign: 'right', maxWidth: '60%' }}>
-                {results.analysis}
-              </span>
-            </div>
-          </>
-        )}
+          {results && (
+            <>
+              <div className="result-row">
+                <span className="result-label">Heart Rate</span>
+                <span className="result-val">{results.vitals?.hr} bpm</span>
+              </div>
+              <div className="result-row">
+                <span className="result-label">Blood Pressure</span>
+                <span className="result-val">{results.vitals?.bp}</span>
+              </div>
+              <div className="result-row">
+                <span className="result-label">SpO2</span>
+                <span className="result-val">{results.vitals?.spo2}%</span>
+              </div>
+              <div className="result-row">
+                <span className="result-label">Avg Quality</span>
+                <span className="result-val">{results.quality_summary?.avg_quality}</span>
+              </div>
+              <div className="result-row">
+                <span className="result-label">Duration</span>
+                <span className="result-val">{results.duration_sec}s</span>
+              </div>
+              <div className="result-row">
+                <span className="result-label">Analysis</span>
+                <span className="result-val" style={{ fontSize: '0.9rem', textAlign: 'right', maxWidth: '60%' }}>
+                  {typeof results.analysis === 'object' ? JSON.stringify(results.analysis) : results.analysis}
+                </span>
+              </div>
+            </>
+          )}
 
-        <button className="btn btn-primary" style={{ marginTop: 24 }} onClick={() => {
-          setScanStatus('READY'); setLiveData(null); setResults(null); go('dashboard');
-        }}>Start New Scan</button>
+          <button className="btn btn-primary" style={{ marginTop: 24 }} onClick={() => {
+            setScanStatus('READY'); setLiveData(null); setResults(null); go('dashboard');
+          }}>Start New Scan</button>
+        </div>
       </div>
-    </div>
-  );
+    );
+  }
 
   return null;
 }
