@@ -97,6 +97,28 @@ def get_my_wards(
     return guardian_service.get_my_wards(current_user["user_id"])
 
 
+@router.get("/wards/{ward_id}/profile")
+def get_ward_profile(
+    ward_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Guardian views ward's demographic & biometrics overview.
+    """
+    return guardian_service.get_ward_profile(current_user["user_id"], ward_id)
+
+
+@router.get("/wards/{ward_id}/latest-result")
+def get_ward_latest_result(
+    ward_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Guardian views ward's most recent measurement report (requires share_results=true).
+    """
+    return guardian_service.get_ward_latest_result(current_user["user_id"], ward_id)
+
+
 @router.get("/wards/{ward_id}/results/{measurement_id}", response_model=MeasurementResult)
 def get_ward_measurement_result(
     ward_id: str,
@@ -119,3 +141,4 @@ def get_ward_diary(
     Guardian views a ward's daily vitals history (requires active relationship & share_trends=true).
     """
     return guardian_service.get_ward_diary(current_user["user_id"], ward_id, date)
+

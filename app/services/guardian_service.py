@@ -193,6 +193,55 @@ def get_my_wards(guardian_user_id: str) -> List[WardSummaryResponse]:
     return res
 
 
+def get_ward_profile(guardian_user_id: str, ward_id: str) -> Dict[str, Any]:
+    """
+    Returns demographic & health profile of a ward to their authorized guardian.
+    """
+    rel = _verify_guardian_relationship(guardian_user_id, ward_id)
+    ward = users.get(ward_id)
+    if not ward:
+        raise HTTPException(status_code=404, detail="Ward profile not found.")
+        
+    return {
+        "ward_id": ward_id,
+        "full_name": ward.get("full_name"),
+        "email": ward.get("email"),
+        "date_of_birth": ward.get("date_of_birth"),
+        "gender": ward.get("gender"),
+        "height_cm": ward.get("height_cm"),
+        "weight_kg": ward.get("weight_kg"),
+        "bmi": ward.get("bmi"),
+        "bmi_classification": ward.get("bmi_classification"),
+        "blood_group": ward.get("blood_group"),
+        "permissions": {
+            "share_results": rel["share_results"],
+            "share_trends": rel["share_trends"],
+            "share_alerts": rel["share_alerts"]
+        }
+    }
+
+
+def get_ward_latest_result(guardian_user_id: str, ward_id: str):
+    """
+    Retrieves a ward's most recent measurement report.
+    Enforces share_results == True.
+    """
+    _verify_guardian_permission(guardian_user_id, ward_id, required_permission="share_results")
+    
+    latest_meas_id = None
+    latest_time = ""
+    for m_id, sess in sessions.items():
+        if sess.get("user_id") == ward_id and str(sess.get("status")) in ["COMPLETED", "MeasurementStatus.COMPLETED"] and sess.get("results"):
+            t = sess.get("completed_at") or sess.get("started_at") or ""
+            if t >= latest_time:
+                latest_time = t
+                latest_meas_id = m_id
+                
+    if not latest_meas_id:
+        return None
+    return get_measurement_result(latest_meas_id)
+
+
 def get_ward_measurement_result(guardian_user_id: str, ward_id: str, measurement_id: str):
     """
     Retrieves a ward's measurement result.
@@ -218,24 +267,29 @@ def get_ward_diary(guardian_user_id: str, ward_id: str, date_str: str):
     return get_user_diary_by_date(user_id=ward_id, date_str=date_str)
 
 
-def _verify_guardian_permission(guardian_user_id: str, ward_id: str, required_permission: str):
+def _verify_guardian_relationship(guardian_user_id: str, ward_id: str) -> dict:
     for rel in guardians_store.values():
         if (
             rel["guardian_user_id"] == guardian_user_id 
             and rel["user_id"] == ward_id 
             and rel["status"] == GuardianRelationshipStatus.ACCEPTED
         ):
-            if not rel.get(required_permission, False):
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"Ward has not granted '{required_permission}' permission to you."
-                )
             return rel
             
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
         detail="Active guardian relationship not found for this ward."
     )
+
+
+def _verify_guardian_permission(guardian_user_id: str, ward_id: str, required_permission: str) -> dict:
+    rel = _verify_guardian_relationship(guardian_user_id, ward_id)
+    if not rel.get(required_permission, False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Ward has not granted '{required_permission}' permission to you."
+        )
+    return rel
 
 
 def _format_relationship_response(rel: dict) -> GuardianRelationshipResponse:

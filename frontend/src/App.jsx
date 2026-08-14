@@ -114,7 +114,7 @@ function LineChart({ data = [], color = '#6ee7b7', label = '', unit = '' }) {
       </div>
       <svg width={W} height={H} style={{ display: 'block', overflow: 'visible' }}>
         <defs>
-          <linearGradient id={`grad-${label.replace(/\s/g,'')}`} x1="0" y1="0" x2="0" y2="1">
+          <linearGradient id={`grad-${label.replace(/[^a-zA-Z0-9]/g,'')}`} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={color} stopOpacity="0.35" />
             <stop offset="100%" stopColor={color} stopOpacity="0.02" />
           </linearGradient>
@@ -127,7 +127,7 @@ function LineChart({ data = [], color = '#6ee7b7', label = '', unit = '' }) {
             stroke="rgba(255,255,255,0.06)" strokeWidth="1"
           />
         ))}
-        <polygon points={areaPts} fill={`url(#grad-${label.replace(/\s/g,'')})`} />
+        <polygon points={areaPts} fill={`url(#grad-${label.replace(/[^a-zA-Z0-9]/g,'')})`} />
         <polyline
           points={pts}
           fill="none"
@@ -148,7 +148,7 @@ function LineChart({ data = [], color = '#6ee7b7', label = '', unit = '' }) {
 // ─── App Component ────────────────────────────────────────
 export default function App() {
   const [page, setPage]               = useState('landing'); 
-  // pages: landing | signup | login | onboard-basic | onboard-body | onboard-medical | dashboard | profile | measure | results | diary
+  // pages: landing | signup | login | onboard-basic | onboard-body | onboard-medical | dashboard | profile | ward-view | measure | results | diary
 
   const [auth, setAuth]               = useState(null);   // { token, user_id }
   const [error, setError]             = useState('');
@@ -162,11 +162,20 @@ export default function App() {
   // Guardian State
   const [guardians, setGuardians]               = useState([]);
   const [guardianRequests, setGuardianRequests] = useState([]);
+  const [myWards, setMyWards]                   = useState([]);
   const [showInviteForm, setShowInviteForm]     = useState(false);
   const [inviteEmail, setInviteEmail]           = useState('');
   const [shareResults, setShareResults]         = useState(true);
   const [shareTrends, setShareTrends]           = useState(true);
   const [shareAlerts, setShareAlerts]           = useState(true);
+
+  // Ward Monitoring Portal State (When current user acts as guardian)
+  const [selectedWard, setSelectedWard]         = useState(null);
+  const [wardProfile, setWardProfile]           = useState(null);
+  const [wardLatestResult, setWardLatestResult] = useState(null);
+  const [wardDiaryDate, setWardDiaryDate]       = useState(() => new Date().toISOString().slice(0, 10));
+  const [wardDiaryRecords, setWardDiaryRecords] = useState([]);
+  const [wardExpandedDiary, setWardExpandedDiary] = useState(null);
 
   // Measurement
   const [sessionId, setSessionId]     = useState(null);
@@ -175,7 +184,7 @@ export default function App() {
   const [results, setResults]         = useState(null);
   const wsRef = useRef(null);
 
-  // Diary
+  // Diary (My Own)
   const [diaryDate, setDiaryDate]       = useState(() => new Date().toISOString().slice(0, 10));
   const [diaryRecords, setDiaryRecords] = useState([]);
   const [expandedDiary, setExpandedDiary] = useState(null);
@@ -190,7 +199,7 @@ export default function App() {
 
   const logout = () => {
     setAuth(null); setUserProfile(null); setSessionId(null); setLiveData(null);
-    setScanStatus('READY'); setResults(null); setGuardians([]); go('landing');
+    setScanStatus('READY'); setResults(null); setGuardians([]); setMyWards([]); setSelectedWard(null); go('landing');
     if (wsRef.current) wsRef.current.close();
   };
 
@@ -221,12 +230,14 @@ export default function App() {
   async function fetchGuardians() {
     if (!auth) return;
     try {
-      const [gRes, reqRes] = await Promise.all([
+      const [gRes, reqRes, wardRes] = await Promise.all([
         fetch(`${API}/guardians`, { headers: headers() }),
-        fetch(`${API}/guardians/requests`, { headers: headers() })
+        fetch(`${API}/guardians/requests`, { headers: headers() }),
+        fetch(`${API}/guardians/wards`, { headers: headers() })
       ]);
       if (gRes.ok) setGuardians(await gRes.json());
       if (reqRes.ok) setGuardianRequests(await reqRes.json());
+      if (wardRes.ok) setMyWards(await wardRes.json());
     } catch (err) {
       console.error('Failed to fetch guardians', err);
     }
@@ -279,6 +290,59 @@ export default function App() {
       });
       if (!res.ok) throw new Error((await res.json()).detail || 'Failed to respond');
       fetchGuardians();
+    } catch (err) { setError(err.message); }
+    setLoading(false);
+  }
+
+  // ── Guardian Ward Monitoring Portal ─────────────────────
+  async function openWardPortal(ward) {
+    setSelectedWard(ward);
+    setLoading(true); setError('');
+    try {
+      // 1. Fetch Ward Profile
+      const pRes = await fetch(`${API}/guardians/wards/${ward.ward_id}/profile`, { headers: headers() });
+      if (pRes.ok) setWardProfile(await pRes.json());
+
+      // 2. Fetch Latest Result (if share_results allowed)
+      if (ward.permissions?.share_results) {
+        const rRes = await fetch(`${API}/guardians/wards/${ward.ward_id}/latest-result`, { headers: headers() });
+        if (rRes.ok) setWardLatestResult(await rRes.json());
+        else setWardLatestResult(null);
+      } else {
+        setWardLatestResult(null);
+      }
+
+      // 3. Fetch Today's Diary (if share_trends allowed)
+      const today = new Date().toISOString().slice(0, 10);
+      setWardDiaryDate(today);
+      if (ward.permissions?.share_trends) {
+        const dRes = await fetch(`${API}/guardians/wards/${ward.ward_id}/diary?date=${today}`, { headers: headers() });
+        if (dRes.ok) {
+          const dData = await dRes.json();
+          setWardDiaryRecords(dData.measurements || []);
+        } else {
+          setWardDiaryRecords([]);
+        }
+      } else {
+        setWardDiaryRecords([]);
+      }
+
+      go('ward-view');
+    } catch (err) {
+      setError(err.message);
+    }
+    setLoading(false);
+  }
+
+  async function fetchWardDiary(targetDate) {
+    if (!selectedWard) return;
+    setLoading(true); setError('');
+    try {
+      const res = await fetch(`${API}/guardians/wards/${selectedWard.ward_id}/diary?date=${targetDate}`, { headers: headers() });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Failed to fetch ward diary records');
+      setWardDiaryRecords(data.measurements || []);
+      setWardDiaryDate(targetDate);
     } catch (err) { setError(err.message); }
     setLoading(false);
   }
@@ -700,6 +764,34 @@ export default function App() {
             )}
           </div>
 
+          {/* Monitored Wards Section (When Guardian has accepted wards) */}
+          {myWards.length > 0 && (
+            <div className="profile-card" style={{ borderColor: 'rgba(99, 102, 241, 0.4)', background: 'rgba(99, 102, 241, 0.05)' }}>
+              <div className="metric-label" style={{ color: 'var(--primary)', marginBottom: 8 }}>
+                👥 Monitored Family & Wards ({myWards.length})
+              </div>
+              <p style={{ color: 'var(--muted)', fontSize: '0.8rem', marginBottom: 12 }}>
+                You have active access to view health records for the following people:
+              </p>
+              {myWards.map(w => (
+                <div key={w.relationship_id} className="guardian-item" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>{w.ward_name}</div>
+                    <div style={{ color: 'var(--muted)', fontSize: '0.75rem' }}>{w.ward_email}</div>
+                    <div style={{ marginTop: 4 }}>
+                      {w.permissions?.share_results && <span className="pill">Results</span>}
+                      {w.permissions?.share_trends && <span className="pill">Diary</span>}
+                      {w.permissions?.share_alerts && <span className="pill">Alerts</span>}
+                    </div>
+                  </div>
+                  <button className="btn btn-primary btn-sm" onClick={() => openWardPortal(w)}>
+                    📊 View Health Records →
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
           <div className="card-title">Ready for your scan?</div>
           <div className="card-sub">Measure heart rate, blood pressure, and oxygen saturation</div>
 
@@ -797,10 +889,35 @@ export default function App() {
             </div>
           </div>
 
+          {/* Monitored Wards (When acting as guardian) */}
+          {myWards.length > 0 && (
+            <div className="profile-card" style={{ marginBottom: 16, borderColor: 'rgba(99, 102, 241, 0.4)' }}>
+              <div className="metric-label" style={{ color: 'var(--primary)', marginBottom: 12 }}>
+                👥 Wards I am Monitoring ({myWards.length})
+              </div>
+              {myWards.map(w => (
+                <div key={w.relationship_id} className="guardian-item" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>{w.ward_name}</div>
+                    <div style={{ color: 'var(--muted)', fontSize: '0.75rem' }}>{w.ward_email}</div>
+                    <div style={{ marginTop: 4 }}>
+                      {w.permissions?.share_results && <span className="pill">Results</span>}
+                      {w.permissions?.share_trends && <span className="pill">Diary</span>}
+                      {w.permissions?.share_alerts && <span className="pill">Alerts</span>}
+                    </div>
+                  </div>
+                  <button className="btn btn-primary btn-sm" onClick={() => openWardPortal(w)}>
+                    View Records →
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Guardians & Family Access */}
           <div className="profile-card" style={{ marginBottom: 16 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <div className="metric-label" style={{ marginBottom: 0 }}>🛡 Guardians ({guardians.length})</div>
+              <div className="metric-label" style={{ marginBottom: 0 }}>🛡 My Guardians ({guardians.length})</div>
               <button className="btn btn-ghost btn-sm" onClick={() => setShowInviteForm(!showInviteForm)}>
                 {showInviteForm ? 'Cancel' : '+ Add Guardian'}
               </button>
@@ -890,6 +1007,203 @@ export default function App() {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+
+          <button className="btn btn-ghost" onClick={() => go('dashboard')}>
+            ← Back to Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Ward Health Portal (Guardian's View of Ward's Records) ───
+  if (page === 'ward-view') {
+    const wardAge = computeAge(wardProfile?.date_of_birth);
+    const initials = getInitials(wardProfile?.full_name || selectedWard?.ward_name);
+
+    return (
+      <div className="page">
+        <div className="card">
+          <NavBar 
+            title="Guardian Portal" 
+            onLogout={logout} 
+            onProfile={() => go('profile')} 
+            profileInitials={getInitials(userProfile?.full_name)}
+            onBrandClick={() => go('dashboard')}
+          />
+
+          {/* Ward Header */}
+          <div style={{ textAlign: 'center', marginBottom: 20 }}>
+            <div className="avatar-lg" style={{ background: 'linear-gradient(135deg, #3b82f6, #6366f1)' }}>
+              {initials}
+            </div>
+            <div className="card-title" style={{ marginBottom: 2 }}>{wardProfile?.full_name || selectedWard?.ward_name}</div>
+            <div style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>{wardProfile?.email || selectedWard?.ward_email}</div>
+            <div style={{ marginTop: 8 }}>
+              <span className="badge badge-completed" style={{ fontSize: '0.7rem' }}>Authorized Ward</span>
+            </div>
+          </div>
+
+          {error && <div className="alert alert-error" style={{ marginBottom: 16 }}>{error}</div>}
+
+          {/* Ward Biometrics Snapshot */}
+          <div className="profile-card" style={{ marginBottom: 16 }}>
+            <div className="metric-label" style={{ marginBottom: 12 }}>👤 Ward Demographic Snapshot</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: '0.85rem' }}>
+              <div>
+                <span style={{ color: 'var(--muted)', fontSize: '0.75rem', display: 'block' }}>AGE / DOB</span>
+                <strong>{wardAge !== null ? `${wardAge} yrs` : '--'} ({wardProfile?.date_of_birth || 'N/A'})</strong>
+              </div>
+              <div>
+                <span style={{ color: 'var(--muted)', fontSize: '0.75rem', display: 'block' }}>GENDER & BLOOD GROUP</span>
+                <strong>{wardProfile?.gender || '--'} · <span style={{ color: '#f87171' }}>{wardProfile?.blood_group || '--'}</span></strong>
+              </div>
+              <div>
+                <span style={{ color: 'var(--muted)', fontSize: '0.75rem', display: 'block' }}>HEIGHT</span>
+                <strong>{formatHeight(wardProfile?.height_cm, heightUnit)}</strong>
+              </div>
+              <div>
+                <span style={{ color: 'var(--muted)', fontSize: '0.75rem', display: 'block' }}>WEIGHT</span>
+                <strong>{formatWeight(wardProfile?.weight_kg, weightUnit)}</strong>
+              </div>
+              {wardProfile?.bmi && (
+                <div style={{ gridColumn: '1 / -1', marginTop: 4 }}>
+                  <span style={{ color: 'var(--muted)', fontSize: '0.75rem' }}>BMI: </span>
+                  <strong>{wardProfile.bmi}</strong> <span className="pill">{wardProfile.bmi_classification || 'Normal'}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Section 1: Latest Measurement Report */}
+          <div className="profile-card" style={{ marginBottom: 16 }}>
+            <div className="metric-label" style={{ marginBottom: 12 }}>📊 Latest Measurement Report</div>
+            {!selectedWard?.permissions?.share_results ? (
+              <div className="instruction-box" style={{ background: 'rgba(245, 158, 11, 0.1)', borderColor: 'rgba(245, 158, 11, 0.3)', color: '#fcd34d' }}>
+                🔒 The ward has not enabled the "share_results" permission for you.
+              </div>
+            ) : !wardLatestResult ? (
+              <div style={{ color: 'var(--muted)', fontSize: '0.85rem', textAlign: 'center', padding: '12px 0' }}>
+                No completed measurement scans recorded yet for this ward.
+              </div>
+            ) : (
+              <div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+                  <div className="metric-item">
+                    <div className="metric-label">Heart Rate</div>
+                    <div className="metric-value">{wardLatestResult.heart_rate_bpm || wardLatestResult.vitals?.hr} bpm</div>
+                  </div>
+                  <div className="metric-item">
+                    <div className="metric-label">Blood Pressure</div>
+                    <div className="metric-value">
+                      {wardLatestResult.systolic_bp_mmhg ? `${Math.round(wardLatestResult.systolic_bp_mmhg)}/${Math.round(wardLatestResult.diastolic_bp_mmhg)}` : wardLatestResult.vitals?.bp}
+                    </div>
+                  </div>
+                  <div className="metric-item">
+                    <div className="metric-label">SpO2</div>
+                    <div className="metric-value">{wardLatestResult.vitals?.spo2 || 98}%</div>
+                  </div>
+                  <div className="metric-item">
+                    <div className="metric-label">HRV (ms)</div>
+                    <div className="metric-value">{wardLatestResult.hrv_ms || '--'}</div>
+                  </div>
+                  <div className="metric-item">
+                    <div className="metric-label">Breathing Rate</div>
+                    <div className="metric-value">{wardLatestResult.breathing_rate_bpm ? `${wardLatestResult.breathing_rate_bpm} rpm` : '--'}</div>
+                  </div>
+                  <div className="metric-item">
+                    <div className="metric-label">Stress Index</div>
+                    <div className="metric-value">{wardLatestResult.stress_index || '--'}</div>
+                  </div>
+                </div>
+
+                <div className="result-row">
+                  <span className="result-label">Signal Quality</span>
+                  <span className="result-val">{wardLatestResult.signal_quality_level || wardLatestResult.quality_summary?.avg_quality || 'GOOD'}</span>
+                </div>
+                <div className="result-row">
+                  <span className="result-label">Analysis</span>
+                  <span className="result-val" style={{ fontSize: '0.85rem', textAlign: 'right', maxWidth: '60%' }}>
+                    {typeof wardLatestResult.analysis === 'object' ? JSON.stringify(wardLatestResult.analysis) : wardLatestResult.analysis}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Section 2: Vitals Diary & Time-Series Graphs */}
+          <div className="profile-card" style={{ marginBottom: 16 }}>
+            <div className="metric-label" style={{ marginBottom: 12 }}>📅 Ward's Vitals Diary</div>
+            {!selectedWard?.permissions?.share_trends ? (
+              <div className="instruction-box" style={{ background: 'rgba(245, 158, 11, 0.1)', borderColor: 'rgba(245, 158, 11, 0.3)', color: '#fcd34d' }}>
+                🔒 The ward has not enabled the "share_trends" permission for you.
+              </div>
+            ) : (
+              <div>
+                <div className="form-group" style={{ marginBottom: 12 }}>
+                  <label>Select Date</label>
+                  <input 
+                    type="date" 
+                    value={wardDiaryDate} 
+                    onChange={e => {
+                      const sel = e.target.value;
+                      setWardDiaryDate(sel);
+                      if (sel) fetchWardDiary(sel);
+                    }} 
+                  />
+                </div>
+
+                {wardDiaryRecords.length === 0 ? (
+                  <div style={{ color: 'var(--muted)', fontSize: '0.85rem', textAlign: 'center', padding: '12px 0' }}>
+                    No measurements recorded by ward on {wardDiaryDate}.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {wardDiaryRecords.map((m, idx) => (
+                      <div key={m.measurement_id || idx}
+                        className="metric-item"
+                        style={{ textAlign: 'left', padding: '14px', cursor: 'pointer' }}
+                        onClick={() => setWardExpandedDiary(wardExpandedDiary === m.measurement_id ? null : m.measurement_id)}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: '0.75rem', color: 'var(--muted)' }}>
+                          <span>Session: {m.measurement_id?.slice(0, 12)}...</span>
+                          <span>{m.recorded_at ? new Date(m.recorded_at).toLocaleTimeString() : ''} {wardExpandedDiary === m.measurement_id ? '▲' : '▼'}</span>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+                          <div>
+                            <div className="metric-label">HR</div>
+                            <div style={{ fontWeight: 700 }}>{m.heart_rate} bpm</div>
+                          </div>
+                          <div>
+                            <div className="metric-label">SpO2</div>
+                            <div style={{ fontWeight: 700 }}>{m.spo2}%</div>
+                          </div>
+                          <div>
+                            <div className="metric-label">BP</div>
+                            <div style={{ fontWeight: 700 }}>{m.systolic}/{m.diastolic}</div>
+                          </div>
+                        </div>
+
+                        {/* Expanded Graphs */}
+                        {wardExpandedDiary === m.measurement_id && (
+                          <div style={{ marginTop: 16, borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 14 }} onClick={e => e.stopPropagation()}>
+                            <LineChart data={m.hr_series} color="#f87171" label="Heart Rate" unit=" bpm" />
+                            <LineChart data={m.spo2_series} color="#60a5fa" label="SpO2" unit="%" />
+                            <LineChart 
+                              data={m.bp_series ? m.bp_series.map(pts => pts.length ? pts.reduce((a,b)=>a+b,0)/pts.length : 0) : []} 
+                              color="#a78bfa" 
+                              label="BP avg waveform" 
+                              unit=" mmHg" 
+                            />
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
