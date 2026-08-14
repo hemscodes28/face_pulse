@@ -351,3 +351,58 @@ input:focus, select:focus {
   margin-right: 4px;
 }
 
+/* ─── Live Telemetry & Graph Styling ─── */
+@keyframes heartPulse {
+  0% { transform: scale(1); }
+  15% { transform: scale(1.25); }
+  30% { transform: scale(1); }
+  45% { transform: scale(1.15); }
+  60% { transform: scale(1); }
+}
+
+.heart-beat-icon {
+  display: inline-block;
+  color: #f87171;
+  animation: heartPulse 1s ease-in-out infinite;
+  transform-origin: center;
+}
+
+.progress-track {
+  width: 100%;
+  height: 6px;
+  background: var(--surface2);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 8px;
+  border: 1px solid var(--border);
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--primary), var(--success));
+  transition: width 0.8s ease;
+}
+
+.quality-meter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.meter-bar {
+  flex: 1;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.meter-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.4s ease;
+}
+
+
