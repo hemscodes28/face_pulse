@@ -43,6 +43,18 @@ function getInitials(name) {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
+function getQualityBadgeClass(status) {
+  switch ((status || '').toUpperCase()) {
+    case 'EXCELLENT': return 'badge-completed';
+    case 'GOOD': return 'badge-measuring';
+    case 'FAIR': return 'badge-processing';
+    case 'POOR':
+    case 'TOO_DARK':
+    case 'TOO_BRIGHT': return 'badge-poor';
+    default: return 'badge-measuring';
+  }
+}
+
 function NavBar({ title, onLogout, onProfile, profileInitials, onBrandClick }) {
   return (
     <div className="nav">
@@ -77,15 +89,52 @@ function StepBar({ total, current }) {
   );
 }
 
-// ─── Inline SVG Line Chart (Supports Responsive Width) ────
-function LineChart({ data = [], color = '#6ee7b7', label = '', unit = '', height = 75 }) {
+// ─── Heart Rate Zone Spectrum Diagram ──────────────────────
+function HeartRateZoneDiagram({ bpm = 75 }) {
+  // Clamp between 40 and 160 for visual scale
+  const minScale = 40;
+  const maxScale = 160;
+  const clamped = Math.max(minScale, Math.min(maxScale, bpm));
+  const pinPercent = ((clamped - minScale) / (maxScale - minScale)) * 100;
+
+  return (
+    <div style={{ background: 'var(--surface)', padding: '14px', borderRadius: 10, border: '1px solid var(--border)', marginBottom: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: 'var(--muted)', marginBottom: 8 }}>
+        <span>Heart Rate Zone Spectrum</span>
+        <span style={{ color: bpm >= 60 && bpm <= 100 ? '#10b981' : '#f59e0b', fontWeight: 700 }}>
+          {bpm < 60 ? 'Resting / Low' : bpm <= 100 ? 'Normal Resting Zone' : 'Elevated'}
+        </span>
+      </div>
+      
+      {/* Visual Zone Bar */}
+      <div style={{ position: 'relative', height: 16, borderRadius: 8, background: 'linear-gradient(90deg, #60a5fa 0%, #10b981 35%, #10b981 65%, #f59e0b 85%, #f87171 100%)', margin: '14px 0 20px 0', border: '1px solid rgba(255,255,255,0.1)' }}>
+        {/* Animated Pin Indicator */}
+        <div style={{ position: 'absolute', left: `${pinPercent}%`, top: -6, transform: 'translateX(-50%)', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <div style={{ width: 14, height: 14, borderRadius: '50%', background: '#ffffff', border: '3px solid #10b981', boxShadow: '0 0 10px rgba(16, 185, 129, 0.8)' }}></div>
+          <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#ffffff', background: '#1e293b', padding: '1px 6px', borderRadius: 4, marginTop: 4, whiteSpace: 'nowrap', border: '1px solid var(--border)' }}>
+            {bpm.toFixed(1)} BPM
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--muted)' }}>
+        <span>40 bpm (Low)</span>
+        <span>60 - 100 bpm (Normal)</span>
+        <span>160 bpm (Max)</span>
+      </div>
+    </div>
+  );
+}
+
+// ─── Inline SVG Line Chart (Dynamic 40s Curve) ────────────
+function LineChart({ data = [], color = '#6ee7b7', label = '', unit = '', height = 85 }) {
   if (!data || data.length < 2) return (
-    <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: '0.8rem', padding: '10px 0' }}>
-      Waiting for telemetry signal...
+    <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: '0.8rem', padding: '12px 0' }}>
+      Waiting for rPPG model observations...
     </div>
   );
 
-  const W = 360, H = height, PAD = 8;
+  const W = 380, H = height, PAD = 10;
   const min = Math.min(...data);
   const max = Math.max(...data);
   const range = max - min || 1;
@@ -103,20 +152,20 @@ function LineChart({ data = [], color = '#6ee7b7', label = '', unit = '', height
   const latestVal = data[data.length - 1];
 
   return (
-    <div style={{ marginBottom: 14 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: 'var(--muted)', marginBottom: 4 }}>
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: 'var(--muted)', marginBottom: 6 }}>
         <span>{label}</span>
         <span style={{ color, fontWeight: 700 }}>
           {typeof latestVal === 'number' ? latestVal.toFixed(1) : latestVal}{unit}
           <span style={{ color: 'var(--muted)', fontWeight: 400, marginLeft: 8, fontSize: '0.72rem' }}>
-            ({min.toFixed(0)} - {max.toFixed(0)}{unit})
+            ({min.toFixed(1)} - {max.toFixed(1)}{unit})
           </span>
         </span>
       </div>
       <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} style={{ display: 'block', overflow: 'visible' }}>
         <defs>
           <linearGradient id={`grad-${label.replace(/[^a-zA-Z0-9]/g,'')}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={color} stopOpacity="0.38" />
+            <stop offset="0%" stopColor={color} stopOpacity="0.42" />
             <stop offset="100%" stopColor={color} stopOpacity="0.01" />
           </linearGradient>
         </defs>
@@ -142,81 +191,7 @@ function LineChart({ data = [], color = '#6ee7b7', label = '', unit = '', height
           return (
             <g>
               <circle cx={lastPt[0]} cy={lastPt[1]} r="6" fill={color} opacity="0.3" />
-              <circle cx={lastPt[0]} cy={lastPt[1]} r="3" fill="#ffffff" />
-            </g>
-          );
-        })()}
-      </svg>
-    </div>
-  );
-}
-
-// ─── Live Oscilloscope / PPG Waveform Component ───────────
-function LivePulseWaveform({ points = [], color = '#10b981', label = 'Live rPPG Waveform' }) {
-  if (!points || points.length < 2) {
-    return (
-      <div style={{ height: 85, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', fontSize: '0.85rem' }}>
-        <span className="heart-beat-icon" style={{ marginRight: 8 }}>💓</span> Initializing facial photoplethysmography stream...
-      </div>
-    );
-  }
-
-  const W = 380, H = 85, PAD = 8;
-  const slice = points.slice(-40);
-  const min = Math.min(...slice);
-  const max = Math.max(...slice);
-  const range = max - min || 1;
-
-  const pts = slice.map((v, i) => {
-    const x = PAD + (i / (slice.length - 1)) * (W - PAD * 2);
-    const y = PAD + (1 - (v - min) / range) * (H - PAD * 2);
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  }).join(' ');
-
-  const firstX = PAD;
-  const lastX  = PAD + (W - PAD * 2);
-  const bottom = H - PAD;
-  const areaPts = `${firstX},${bottom} ${pts} ${lastX},${bottom}`;
-
-  return (
-    <div style={{ background: 'rgba(0,0,0,0.3)', padding: '12px 14px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.08)', marginBottom: 16 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, fontSize: '0.75rem' }}>
-        <span style={{ color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, display: 'inline-block', boxShadow: `0 0 8px ${color}` }}></span>
-          {label}
-        </span>
-        <span style={{ color, fontWeight: 700, letterSpacing: '0.5px' }}>● LIVE OSCILLOSCOPE</span>
-      </div>
-      <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} style={{ display: 'block', overflow: 'visible' }}>
-        <defs>
-          <linearGradient id={`grad-live-${label.replace(/[^a-zA-Z0-9]/g,'')}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={color} stopOpacity="0.35" />
-            <stop offset="100%" stopColor={color} stopOpacity="0.0" />
-          </linearGradient>
-        </defs>
-        {[0.25, 0.5, 0.75].map(p => (
-          <line key={p}
-            x1={PAD} x2={W - PAD}
-            y1={PAD + p * (H - PAD * 2)}
-            y2={PAD + p * (H - PAD * 2)}
-            stroke="rgba(255,255,255,0.05)" strokeWidth="1" strokeDasharray="3 3"
-          />
-        ))}
-        <polygon points={areaPts} fill={`url(#grad-live-${label.replace(/[^a-zA-Z0-9]/g,'')})`} />
-        <polyline
-          points={pts}
-          fill="none"
-          stroke={color}
-          strokeWidth="2.5"
-          strokeLinejoin="round"
-          strokeLinecap="round"
-        />
-        {(() => {
-          const last = pts.split(' ').pop().split(',');
-          return (
-            <g>
-              <circle cx={last[0]} cy={last[1]} r="6" fill={color} opacity="0.4" />
-              <circle cx={last[0]} cy={last[1]} r="3" fill="#ffffff" />
+              <circle cx={lastPt[0]} cy={lastPt[1]} r="3.5" fill="#ffffff" />
             </g>
           );
         })()}
@@ -249,7 +224,7 @@ export default function App() {
   const [shareTrends, setShareTrends]           = useState(true);
   const [shareAlerts, setShareAlerts]           = useState(true);
 
-  // Ward Monitoring Portal State (When current user acts as guardian)
+  // Ward Monitoring Portal State
   const [selectedWard, setSelectedWard]         = useState(null);
   const [wardProfile, setWardProfile]           = useState(null);
   const [wardLatestResult, setWardLatestResult] = useState(null);
@@ -257,18 +232,128 @@ export default function App() {
   const [wardDiaryRecords, setWardDiaryRecords] = useState([]);
   const [wardExpandedDiary, setWardExpandedDiary] = useState(null);
 
-  // Measurement State & Real-Time Live Telemetry
+  // Measurement State & Real rPPG Telemetry
   const [sessionId, setSessionId]               = useState(null);
   const [liveData, setLiveData]                 = useState(null);
   const [scanStatus, setScanStatus]             = useState('READY');
-  const [liveHrHistory, setLiveHrHistory]       = useState([]);
-  const [liveSpo2History, setLiveSpo2History]   = useState([]);
-  const [liveBpWaveform, setLiveBpWaveform]     = useState([]);
+  const [liveBpmHistory, setLiveBpmHistory]     = useState([]);
   const [results, setResults]                   = useState(null);
   const wsRef = useRef(null);
 
+  // Live Biometric Camera State
+  const videoRef = useRef(null);
+  const cameraStreamRef = useRef(null);
+  const [cameraActive, setCameraActive]         = useState(false);
+
+  useEffect(() => {
+    if (page === 'measure') {
+      startCamera();
+    } else {
+      stopCamera();
+    }
+    return () => stopCamera();
+  }, [page]);
+
+  async function startCamera() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' }
+      });
+      cameraStreamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+      setCameraActive(true);
+    } catch (err) {
+      console.warn('Webcam permission error or camera not accessible:', err);
+      setCameraActive(false);
+    }
+  }
+
+  function stopCamera() {
+    if (cameraStreamRef.current) {
+      cameraStreamRef.current.getTracks().forEach(track => track.stop());
+      cameraStreamRef.current = null;
+    }
+    setCameraActive(false);
+  }
+
+  // Real-Time Optical Face ROI Sampler Loop (30 FPS)
+  const sampleCanvasRef = useRef(null);
+  const frameIntervalRef = useRef(null);
+
+  useEffect(() => {
+    if (scanStatus === 'MEASURING') {
+      if (!sampleCanvasRef.current) {
+        sampleCanvasRef.current = document.createElement('canvas');
+        sampleCanvasRef.current.width = 48;
+        sampleCanvasRef.current.height = 48;
+      }
+      const canvas = sampleCanvasRef.current;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+      let frameCount = 0;
+      frameIntervalRef.current = setInterval(() => {
+        if (!videoRef.current || videoRef.current.readyState < 2 || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+          return;
+        }
+
+        const v = videoRef.current;
+        const vw = v.videoWidth || 640;
+        const vh = v.videoHeight || 480;
+
+        // Crop center forehead / face ROI from live camera
+        const cropW = vw * 0.35;
+        const cropH = vh * 0.35;
+        const cropX = (vw - cropW) / 2;
+        const cropY = (vh - cropH) / 2;
+
+        ctx.drawImage(v, cropX, cropY, cropW, cropH, 0, 0, 48, 48);
+        const imgData = ctx.getImageData(0, 0, 48, 48).data;
+
+        let totalR = 0, totalG = 0, totalB = 0;
+        const numPixels = 48 * 48;
+        for (let i = 0; i < imgData.length; i += 4) {
+          totalR += imgData[i];
+          totalG += imgData[i + 1];
+          totalB += imgData[i + 2];
+        }
+
+        const r_mean = totalR / numPixels;
+        const g_mean = totalG / numPixels;
+        const b_mean = totalB / numPixels;
+        const luminance = 0.299 * r_mean + 0.587 * g_mean + 0.114 * b_mean;
+        frameCount++;
+
+        // Send real optical photon sample to backend POS rPPG DSP Processor
+        wsRef.current.send(JSON.stringify({
+          type: "frame_sample",
+          r: r_mean,
+          g: g_mean,
+          b: b_mean,
+          luminance: luminance,
+          frame: frameCount,
+          status: "OK"
+        }));
+      }, 1000 / 30);
+    } else {
+      if (frameIntervalRef.current) {
+        clearInterval(frameIntervalRef.current);
+        frameIntervalRef.current = null;
+      }
+    }
+
+    return () => {
+      if (frameIntervalRef.current) {
+        clearInterval(frameIntervalRef.current);
+        frameIntervalRef.current = null;
+      }
+    };
+  }, [scanStatus]);
+
   // Diary (My Own)
   const [diaryDate, setDiaryDate]       = useState(() => new Date().toISOString().slice(0, 10));
+
   const [diaryRecords, setDiaryRecords] = useState([]);
   const [expandedDiary, setExpandedDiary] = useState(null);
 
@@ -281,15 +366,16 @@ export default function App() {
   const go = (p) => { setError(''); setPage(p); };
 
   const logout = () => {
+    stopCamera();
     setAuth(null); setUserProfile(null); setSessionId(null); setLiveData(null);
-    setLiveHrHistory([]); setLiveSpo2History([]); setLiveBpWaveform([]);
-    setScanStatus('READY'); setResults(null); setGuardians([]); setMyWards([]); setSelectedWard(null); go('landing');
+    setLiveBpmHistory([]); setScanStatus('READY'); setResults(null);
+    setGuardians([]); setMyWards([]); setSelectedWard(null); go('landing');
     if (wsRef.current) wsRef.current.close();
   };
 
-  useEffect(() => () => { if (wsRef.current) wsRef.current.close(); }, []);
+  useEffect(() => () => { if (wsRef.current) wsRef.current.close(); stopCamera(); }, []);
 
-  // Fetch profile and guardians whenever auth changes or user enters dashboard/profile
+
   useEffect(() => {
     if (auth && auth.user_id) {
       fetchProfile();
@@ -538,9 +624,7 @@ export default function App() {
       setSessionId(data.measurement_id);
       setScanStatus('READY');
       setLiveData(null);
-      setLiveHrHistory([]);
-      setLiveSpo2History([]);
-      setLiveBpWaveform([]);
+      setLiveBpmHistory([]);
       go('measure');
     } catch (err) { setError(err.message); }
     setLoading(false);
@@ -548,9 +632,7 @@ export default function App() {
 
   function startScan() {
     if (!sessionId) return;
-    setLiveHrHistory([]);
-    setLiveSpo2History([]);
-    setLiveBpWaveform([]);
+    setLiveBpmHistory([]);
 
     const ws = new WebSocket(`ws://127.0.0.1:8000/api/v1/measurements/${sessionId}/live`);
     wsRef.current = ws;
@@ -562,19 +644,15 @@ export default function App() {
         setScanStatus('PROCESSING');
       } else if (data.status === 'COMPLETED') {
         setScanStatus('COMPLETED');
-      } else if (data.elapsed_time_sec !== undefined) {
+      } else if (data.bpm !== undefined || data.elapsed_time_sec !== undefined) {
         setLiveData(data);
-        if (data.hr && data.hr > 0) {
-          setLiveHrHistory(prev => [...prev, data.hr]);
-        }
-        if (data.spo2 && data.spo2 > 0) {
-          setLiveSpo2History(prev => [...prev, data.spo2]);
-        }
-        if (data.bp && Array.isArray(data.bp)) {
-          setLiveBpWaveform(prev => [...prev.slice(-40), ...data.bp]);
+        const bpmVal = data.bpm || data.hr;
+        if (bpmVal && bpmVal > 0) {
+          setLiveBpmHistory(prev => [...prev, bpmVal]);
         }
       }
     };
+
     ws.onerror = () => setError('WebSocket error. Is the backend server running?');
   }
 
@@ -615,7 +693,7 @@ export default function App() {
             Face<span style={{ color: 'var(--primary)' }}>Pulse</span>
           </div>
           <p className="card-sub" style={{ marginBottom: 0 }}>
-            Contactless vitals measurement powered by rPPG
+            Contactless vitals measurement powered by real rPPG
           </p>
         </div>
         <button className="btn btn-primary" onClick={() => go('signup')}>Create Account</button>
@@ -865,7 +943,7 @@ export default function App() {
             )}
           </div>
 
-          {/* Monitored Wards Section (When Guardian has accepted wards) */}
+          {/* Monitored Wards Section */}
           {myWards.length > 0 && (
             <div className="profile-card" style={{ borderColor: 'rgba(99, 102, 241, 0.4)', background: 'rgba(99, 102, 241, 0.05)' }}>
               <div className="metric-label" style={{ color: 'var(--primary)', marginBottom: 8 }}>
@@ -894,7 +972,7 @@ export default function App() {
           )}
 
           <div className="card-title">Ready for your scan?</div>
-          <div className="card-sub">Measure heart rate, blood pressure, and oxygen saturation</div>
+          <div className="card-sub">Measure heart rate BPM, HRV, and signal quality with real rPPG</div>
 
           {error && <div className="alert alert-error">{error}</div>}
 
@@ -990,7 +1068,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* Monitored Wards (When acting as guardian) */}
+          {/* Monitored Wards */}
           {myWards.length > 0 && (
             <div className="profile-card" style={{ marginBottom: 16, borderColor: 'rgba(99, 102, 241, 0.4)' }}>
               <div className="metric-label" style={{ color: 'var(--primary)', marginBottom: 12 }}>
@@ -1120,7 +1198,7 @@ export default function App() {
     );
   }
 
-  // ── Ward Health Portal (Guardian's View of Ward's Records) ───
+  // ── Ward Health Portal (Guardian's View) ─────────────────────
   if (page === 'ward-view') {
     const wardAge = computeAge(wardProfile?.date_of_birth);
     const initials = getInitials(wardProfile?.full_name || selectedWard?.ward_name);
@@ -1194,48 +1272,40 @@ export default function App() {
               <div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
                   <div className="metric-item">
-                    <div className="metric-label">Heart Rate</div>
-                    <div className="metric-value">{wardLatestResult.heart_rate_bpm || wardLatestResult.vitals?.hr} bpm</div>
-                  </div>
-                  <div className="metric-item">
-                    <div className="metric-label">Blood Pressure</div>
-                    <div className="metric-value">
-                      {wardLatestResult.systolic_bp_mmhg ? `${Math.round(wardLatestResult.systolic_bp_mmhg)}/${Math.round(wardLatestResult.diastolic_bp_mmhg)}` : wardLatestResult.vitals?.bp}
+                    <div className="metric-label">Average BPM</div>
+                    <div className="metric-value" style={{ color: '#f87171' }}>
+                      {wardLatestResult.average_bpm || wardLatestResult.bpm || wardLatestResult.vitals?.hr} bpm
                     </div>
                   </div>
                   <div className="metric-item">
-                    <div className="metric-label">SpO2</div>
-                    <div className="metric-value">{wardLatestResult.vitals?.spo2 || 98}%</div>
+                    <div className="metric-label">Signal Quality</div>
+                    <div className="metric-value">
+                      <span className={`badge ${getQualityBadgeClass(wardLatestResult.signal_quality || wardLatestResult.signal_quality_level)}`}>
+                        {wardLatestResult.signal_quality || wardLatestResult.signal_quality_level || 'GOOD'}
+                      </span>
+                    </div>
                   </div>
                   <div className="metric-item">
-                    <div className="metric-label">HRV (ms)</div>
-                    <div className="metric-value">{wardLatestResult.hrv_ms || '--'}</div>
+                    <div className="metric-label">Avg SNR (dB)</div>
+                    <div className="metric-value">{wardLatestResult.avg_snr_db ?? '--'} dB</div>
                   </div>
                   <div className="metric-item">
-                    <div className="metric-label">Breathing Rate</div>
-                    <div className="metric-value">{wardLatestResult.breathing_rate_bpm ? `${wardLatestResult.breathing_rate_bpm} rpm` : '--'}</div>
-                  </div>
-                  <div className="metric-item">
-                    <div className="metric-label">Stress Index</div>
-                    <div className="metric-value">{wardLatestResult.stress_index || '--'}</div>
+                    <div className="metric-label">Video Quality</div>
+                    <div className="metric-value">{wardLatestResult.video_quality || 'GOOD'}</div>
                   </div>
                 </div>
 
                 <div className="result-row">
-                  <span className="result-label">Signal Quality</span>
-                  <span className="result-val">{wardLatestResult.signal_quality_level || wardLatestResult.quality_summary?.avg_quality || 'GOOD'}</span>
-                </div>
-                <div className="result-row">
-                  <span className="result-label">Analysis</span>
-                  <span className="result-val" style={{ fontSize: '0.85rem', textAlign: 'right', maxWidth: '60%' }}>
-                    {typeof wardLatestResult.analysis === 'object' ? JSON.stringify(wardLatestResult.analysis) : wardLatestResult.analysis}
+                  <span className="result-label">Guidance Recommendation</span>
+                  <span className="result-val" style={{ fontSize: '0.85rem', textAlign: 'right', maxWidth: '65%' }}>
+                    {wardLatestResult.recommendation || wardLatestResult.analysis?.recommendation || 'Conditions normal'}
                   </span>
                 </div>
               </div>
             )}
           </div>
 
-          {/* Section 2: Vitals Diary & Time-Series Graphs */}
+          {/* Section 2: Vitals Diary */}
           <div className="profile-card" style={{ marginBottom: 16 }}>
             <div className="metric-label" style={{ marginBottom: 12 }}>📅 Ward's Vitals Diary</div>
             {!selectedWard?.permissions?.share_trends ? (
@@ -1273,32 +1343,18 @@ export default function App() {
                           <span>Session: {m.measurement_id?.slice(0, 12)}...</span>
                           <span>{m.recorded_at ? new Date(m.recorded_at).toLocaleTimeString() : ''} {wardExpandedDiary === m.measurement_id ? '▲' : '▼'}</span>
                         </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <div>
-                            <div className="metric-label">HR</div>
-                            <div style={{ fontWeight: 700 }}>{m.heart_rate} bpm</div>
+                            <div className="metric-label">Heart Rate (BPM)</div>
+                            <div style={{ fontWeight: 700, fontSize: '1.1rem', color: '#f87171' }}>{m.heart_rate} bpm</div>
                           </div>
-                          <div>
-                            <div className="metric-label">SpO2</div>
-                            <div style={{ fontWeight: 700 }}>{m.spo2}%</div>
-                          </div>
-                          <div>
-                            <div className="metric-label">BP</div>
-                            <div style={{ fontWeight: 700 }}>{m.systolic}/{m.diastolic}</div>
-                          </div>
+                          <span className="badge badge-completed">Recorded</span>
                         </div>
 
                         {/* Expanded Graphs */}
-                        {wardExpandedDiary === m.measurement_id && (
+                        {wardExpandedDiary === m.measurement_id && m.hr_series && (
                           <div style={{ marginTop: 16, borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 14 }} onClick={e => e.stopPropagation()}>
-                            <LineChart data={m.hr_series} color="#f87171" label="Heart Rate" unit=" bpm" />
-                            <LineChart data={m.spo2_series} color="#60a5fa" label="SpO2" unit="%" />
-                            <LineChart 
-                              data={m.bp_series ? m.bp_series.map(pts => pts.length ? pts.reduce((a,b)=>a+b,0)/pts.length : 0) : []} 
-                              color="#a78bfa" 
-                              label="BP avg waveform" 
-                              unit=" mmHg" 
-                            />
+                            <LineChart data={m.hr_series} color="#f87171" label="BPM Trajectory" unit=" bpm" />
                           </div>
                         )}
                       </div>
@@ -1368,46 +1424,27 @@ export default function App() {
                     <span>Session: {m.measurement_id?.slice(0, 12)}...</span>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       {m.recorded_at ? new Date(m.recorded_at).toLocaleTimeString() : ''}
-                      <span style={{ fontSize: '0.7rem', opacity: 0.6 }}>{expandedDiary === m.measurement_id ? '▲ hide' : '▼ graphs'}</span>
+                      <span style={{ fontSize: '0.7rem', opacity: 0.6 }}>{expandedDiary === m.measurement_id ? '▲ hide' : '▼ trend'}</span>
                     </span>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
                       <div className="metric-label">Heart Rate</div>
-                      <div className="metric-value" style={{ fontSize: '1.1rem' }}>{m.heart_rate} bpm</div>
+                      <div className="metric-value" style={{ fontSize: '1.2rem', color: '#f87171' }}>{m.heart_rate} bpm</div>
                     </div>
-                    <div>
-                      <div className="metric-label">SpO2</div>
-                      <div className="metric-value" style={{ fontSize: '1.1rem' }}>{m.spo2}%</div>
-                    </div>
-                    <div>
-                      <div className="metric-label">Blood Pressure</div>
-                      <div className="metric-value" style={{ fontSize: '1.1rem' }}>{m.systolic}/{m.diastolic}</div>
-                    </div>
+                    <span className="badge badge-completed">Saved</span>
                   </div>
 
-                  {expandedDiary === m.measurement_id && (
-                    <div style={{ marginTop: 20, borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 16 }}
+                  {expandedDiary === m.measurement_id && m.hr_series && m.hr_series.length > 0 && (
+                    <div style={{ marginTop: 16, borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 14 }}
                       onClick={e => e.stopPropagation()}
                     >
                       <LineChart
                         data={m.hr_series}
                         color="#f87171"
-                        label="Heart Rate"
+                        label="40-Second BPM Trajectory"
                         unit=" bpm"
-                      />
-                      <LineChart
-                        data={m.spo2_series}
-                        color="#60a5fa"
-                        label="SpO2"
-                        unit="%"
-                      />
-                      <LineChart
-                        data={m.bp_series ? m.bp_series.map(pts => pts.length ? pts.reduce((a,b)=>a+b,0)/pts.length : 0) : []}
-                        color="#a78bfa"
-                        label="BP avg waveform"
-                        unit=" mmHg"
                       />
                     </div>
                   )}
@@ -1424,27 +1461,32 @@ export default function App() {
     );
   }
 
-  // ── Measure (Live Telemetry & Real-Time Waveforms) ────────
+  // ── Measure (Real rPPG WebSocket Telemetry) ──────────────
   if (page === 'measure') {
     const initials = getInitials(userProfile?.full_name);
     const elapsed = liveData?.elapsed_time_sec || 0;
     const progressPercent = Math.min(100, Math.round((elapsed / 40) * 100));
-    const lightingPercent = liveData?.quality?.lighting ? Math.round(liveData.quality.lighting * 100) : 85;
+    
+    const snrVal = liveData?.quality?.snr_db ?? '--';
+    const sigQuality = liveData?.quality?.signal_quality || 'GOOD';
+    const lumVal = liveData?.quality?.luminance ?? '--';
+    const videoQuality = liveData?.quality?.video_quality || 'GOOD';
+    const recommendation = liveData?.recommendation || 'Hold your face steady and look directly at camera';
 
     return (
       <div className="page">
         <div className="card" style={{ maxWidth: 500 }}>
           <NavBar 
-            title="Live rPPG Scan" 
+            title="Real rPPG Scan" 
             onLogout={logout} 
             onProfile={() => go('profile')} 
             profileInitials={initials}
             onBrandClick={() => go('dashboard')}
           />
 
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <div>
-              <div className="card-title" style={{ marginBottom: 2 }}>Facial rPPG Scan</div>
+              <div className="card-title" style={{ marginBottom: 2 }}>rPPG Live Measurement</div>
               <div style={{ color: 'var(--muted)', fontSize: '0.78rem' }}>Session: {sessionId?.slice(0, 18)}...</div>
             </div>
             {scanStatus !== 'READY' && (
@@ -1452,11 +1494,31 @@ export default function App() {
             )}
           </div>
 
+          {/* Live Biometric Camera HUD */}
+          <div className="camera-container">
+            <video 
+              ref={videoRef} 
+              autoPlay 
+              playsInline 
+              muted 
+              className="camera-video" 
+            />
+            <div className="camera-overlay">
+              <div className={`face-guide-oval ${scanStatus === 'MEASURING' ? 'measuring' : ''}`}>
+                {scanStatus === 'MEASURING' && <div className="scan-line" />}
+              </div>
+            </div>
+            <div className="camera-status-pill">
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: cameraActive ? '#10b981' : '#ef4444', display: 'inline-block' }}></span>
+              <span>{cameraActive ? (scanStatus === 'MEASURING' ? 'Scanning Face ROI...' : 'Camera Active') : 'Camera Offline (Check Permissions)'}</span>
+            </div>
+          </div>
+
           {/* Start Button */}
           {scanStatus === 'READY' && (
-            <div style={{ textAlign: 'center', marginTop: 28 }}>
-              <div className="instruction-box" style={{ marginBottom: 20, textAlign: 'center', justifyContent: 'center' }}>
-                Position your face directly in front of the camera with good lighting and remain still.
+            <div style={{ textAlign: 'center', marginTop: 12 }}>
+              <div className="instruction-box" style={{ marginBottom: 14, textAlign: 'center', justifyContent: 'center' }}>
+                Position your face inside the guide oval with good lighting and remain still.
               </div>
               <button className="btn btn-primary" onClick={startScan}>
                 ▶ Start 40-Second Live Scan
@@ -1466,7 +1528,8 @@ export default function App() {
 
           {/* Active Measuring State */}
           {scanStatus !== 'READY' && (
-            <div style={{ marginTop: 16 }}>
+            <div style={{ marginTop: 14 }}>
+
               {/* Progress Bar */}
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: 'var(--muted)', marginBottom: 2 }}>
                 <span>Scan Progress</span>
@@ -1476,86 +1539,61 @@ export default function App() {
                 <div className="progress-fill" style={{ width: `${progressPercent}%` }}></div>
               </div>
 
-              {/* Dynamic Guidance Box */}
-              <div className="instruction-box" style={{ marginTop: 0, marginBottom: 16 }}>
+              {/* Dynamic Priority Recommendation Box */}
+              <div className="instruction-box" style={{ marginTop: 0, marginBottom: 16, background: sigQuality === 'POOR' || videoQuality !== 'GOOD' ? 'rgba(239, 68, 68, 0.12)' : 'rgba(16, 185, 129, 0.12)', borderColor: sigQuality === 'POOR' || videoQuality !== 'GOOD' ? 'rgba(239, 68, 68, 0.3)' : 'rgba(16, 185, 129, 0.3)', color: sigQuality === 'POOR' || videoQuality !== 'GOOD' ? '#fca5a5' : '#6ee7b7' }}>
                 {scanStatus === 'PROCESSING'
-                  ? '⏳ Synthesizing high-precision Fourier & Wavelet transforms...'
+                  ? '⏳ Aggregating observations & calculating final metrics...'
                   : scanStatus === 'COMPLETED'
-                  ? '✅ Measurement complete! High-quality vitals generated.'
+                  ? '✅ Measurement complete! High-confidence BPM processed. Redirecting...'
                   : (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span className="heart-beat-icon">❤️</span>
-                      <span>{liveData?.instruction || 'Optimizing face tracking and illumination...'}</span>
+                      <span className="heart-beat-icon">💡</span>
+                      <span>{recommendation}</span>
                     </div>
                   )}
               </div>
 
-              {/* Live Oscilloscope Waveform */}
-              <LivePulseWaveform 
-                points={liveBpWaveform} 
-                color="#10b981" 
-                label="rPPG Blood Volume Pulse (BVP)" 
-              />
-
-              {/* Real-time Vitals Metric Cards */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 14 }}>
-                <div className="metric-item" style={{ padding: 12 }}>
-                  <div className="metric-label" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <span className="heart-beat-icon">💓</span> HR
-                  </div>
-                  <div className="metric-value" style={{ fontSize: '1.2rem', color: '#f87171' }}>
-                    {liveData?.hr ? `${liveData.hr}` : '--'}
-                    <span style={{ fontSize: '0.7rem', color: 'var(--muted)', marginLeft: 2 }}>bpm</span>
-                  </div>
+              {/* Primary Real-Time Metric: Live BPM */}
+              <div style={{ background: 'var(--surface2)', padding: '16px', borderRadius: 12, border: '1px solid var(--border)', textAlign: 'center', marginBottom: 14 }}>
+                <div className="metric-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: '0.85rem' }}>
+                  <span className="heart-beat-icon">❤️</span> LIVE HEART RATE
                 </div>
-
-                <div className="metric-item" style={{ padding: 12 }}>
-                  <div className="metric-label">SpO2</div>
-                  <div className="metric-value" style={{ fontSize: '1.2rem', color: '#60a5fa' }}>
-                    {liveData?.spo2 ? `${liveData.spo2}` : '--'}
-                    <span style={{ fontSize: '0.7rem', color: 'var(--muted)', marginLeft: 2 }}>%</span>
-                  </div>
+                <div style={{ fontSize: '2.8rem', fontWeight: 800, color: '#f87171', margin: '4px 0' }}>
+                  {liveData?.bpm ? liveData.bpm.toFixed(1) : '--'}
+                  <span style={{ fontSize: '1rem', color: 'var(--muted)', fontWeight: 500, marginLeft: 4 }}>BPM</span>
                 </div>
-
-                <div className="metric-item" style={{ padding: 12 }}>
-                  <div className="metric-label">Signal Qual</div>
-                  <div className="metric-value" style={{ fontSize: '1.2rem', color: '#34d399' }}>
-                    {liveData?.quality?.status || 'GOOD'}
-                  </div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>
+                  Model Output Stream (1 tick / sec)
                 </div>
               </div>
 
-              {/* Live Heart Rate & SpO2 Real-Time Graph */}
+              {/* Real-time BPM Trend Graph */}
               <div style={{ background: 'var(--surface2)', padding: '14px', borderRadius: 10, border: '1px solid var(--border)', marginBottom: 14 }}>
                 <LineChart 
-                  data={liveHrHistory} 
+                  data={liveBpmHistory} 
                   color="#f87171" 
-                  label="Live Heart Rate Trend" 
+                  label="Live BPM Trend" 
                   unit=" bpm" 
-                  height={65} 
-                />
-                <LineChart 
-                  data={liveSpo2History} 
-                  color="#60a5fa" 
-                  label="Live SpO2 Stability" 
-                  unit="%" 
-                  height={65} 
+                  height={80} 
                 />
               </div>
 
-              {/* Live Signal Quality Telemetry HUD */}
-              <div className="profile-card" style={{ padding: 12, marginBottom: 14 }}>
+              {/* Real-time SNR and Luminance Quality Meters */}
+              <div className="profile-card" style={{ padding: 14, marginBottom: 14 }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <div className="quality-meter">
-                    <span>Lighting:</span>
-                    <div className="meter-bar">
-                      <div className="meter-fill" style={{ width: `${lightingPercent}%`, background: lightingPercent > 70 ? '#10b981' : '#f59e0b' }}></div>
+                  <div>
+                    <div className="metric-label">Signal Quality (SNR)</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                      <span className={`badge ${getQualityBadgeClass(sigQuality)}`}>{sigQuality}</span>
+                      <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>{snrVal} dB</span>
                     </div>
-                    <span style={{ fontWeight: 600 }}>{lightingPercent}%</span>
                   </div>
-                  <div className="quality-meter">
-                    <span>Tracking:</span>
-                    <span style={{ color: '#10b981', fontWeight: 600 }}>✓ STABLE</span>
+                  <div>
+                    <div className="metric-label">Video Luminance</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                      <span className={`badge ${getQualityBadgeClass(videoQuality)}`}>{videoQuality}</span>
+                      <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>{lumVal}</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1563,9 +1601,28 @@ export default function App() {
           )}
 
           {scanStatus === 'COMPLETED' && (
-            <button className="btn btn-success" style={{ marginTop: 10 }} onClick={fetchResults} disabled={loading}>
-              {loading ? 'Generating Clinical Analysis...' : 'Click here for Results →'}
-            </button>
+            <div style={{ marginTop: 18, textAlign: 'center' }}>
+              <div className="instruction-box" style={{ background: 'rgba(16, 185, 129, 0.12)', borderColor: 'rgba(16, 185, 129, 0.4)', color: '#6ee7b7', marginBottom: 14 }}>
+                🎉 <strong>40-Second Scan Successfully Completed!</strong>
+                <div style={{ fontSize: '0.8rem', marginTop: 4, opacity: 0.9 }}>
+                  Optical rPPG signal data aggregated. Ready for diagnostic analysis.
+                </div>
+              </div>
+              <button 
+                className="btn btn-success" 
+                style={{ 
+                  width: '100%', 
+                  padding: '14px', 
+                  fontSize: '1.05rem', 
+                  fontWeight: 800, 
+                  boxShadow: '0 0 20px rgba(16, 185, 129, 0.35)' 
+                }} 
+                onClick={fetchResults} 
+                disabled={loading}
+              >
+                {loading ? 'Analyzing Vitals...' : '👉 Click Here to See the Results →'}
+              </button>
+            </div>
           )}
 
           {error && <div className="alert alert-error" style={{ marginTop: 12 }}>{error}</div>}
@@ -1574,13 +1631,19 @@ export default function App() {
     );
   }
 
-  // ── Results (Complete Full-Session Analysis & Graphs) ─────
+  // ── Results (Final Real rPPG Result Page) ────────────────
   if (page === 'results') {
     const initials = getInitials(userProfile?.full_name);
+    const avgBpm = results?.average_bpm || results?.bpm || results?.vitals?.hr || 0;
+    const minBpm = results?.min_bpm || 0;
+    const maxBpm = results?.max_bpm || 0;
+    const hrvVal = results?.hrv_ms || 0;
+    const hrRange = results?.hr_range || (maxBpm - minBpm > 0 ? (maxBpm - minBpm).toFixed(1) : 0);
+    const interp = results?.interpretations || {};
 
     return (
       <div className="page">
-        <div className="card" style={{ maxWidth: 520 }}>
+        <div className="card" style={{ maxWidth: 540 }}>
           <NavBar 
             title="Analysis Report" 
             onLogout={logout} 
@@ -1590,97 +1653,151 @@ export default function App() {
           />
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-            <div className="card-title" style={{ color: 'var(--success)', marginBottom: 0 }}>Scan Complete</div>
-            <span className="badge badge-completed">{results?.signal_quality_level || 'EXCELLENT'}</span>
+            <div className="card-title" style={{ color: 'var(--success)', marginBottom: 0 }}>Vitals Analysis Report</div>
+            <span className={`badge ${getQualityBadgeClass(results?.signal_quality)}`}>
+              {results?.signal_quality || 'GOOD'} SIGNAL
+            </span>
           </div>
           <div className="card-sub">Session ID: {sessionId?.slice(0, 18)}...</div>
 
           {results && (
             <div style={{ marginTop: 16 }}>
-              {/* Comprehensive Vitals Cards */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 16 }}>
-                <div className="metric-item">
-                  <div className="metric-label">Heart Rate</div>
-                  <div className="metric-value" style={{ fontSize: '1.2rem', color: '#f87171' }}>
-                    {results.heart_rate_bpm || results.vitals?.hr} bpm
-                  </div>
+              {/* Primary Average Heart Rate Card */}
+              <div style={{ background: 'linear-gradient(135deg, rgba(248, 113, 113, 0.12), rgba(99, 102, 241, 0.12))', padding: '18px', borderRadius: 12, border: '1px solid rgba(248, 113, 113, 0.3)', textAlign: 'center', marginBottom: 14 }}>
+                <div className="metric-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: '0.85rem' }}>
+                  <span className="heart-beat-icon">❤️</span> AVERAGE HEART RATE
                 </div>
-                <div className="metric-item">
-                  <div className="metric-label">Blood Pressure</div>
-                  <div className="metric-value" style={{ fontSize: '1.2rem', color: '#a78bfa' }}>
-                    {results.systolic_bp_mmhg ? `${Math.round(results.systolic_bp_mmhg)}/${Math.round(results.diastolic_bp_mmhg)}` : results.vitals?.bp}
-                  </div>
+                <div style={{ fontSize: '3.2rem', fontWeight: 800, color: '#f87171', margin: '4px 0' }}>
+                  {typeof avgBpm === 'number' ? avgBpm.toFixed(1) : avgBpm}
+                  <span style={{ fontSize: '1rem', color: 'var(--muted)', fontWeight: 500, marginLeft: 4 }}>BPM</span>
                 </div>
-                <div className="metric-item">
-                  <div className="metric-label">SpO2</div>
-                  <div className="metric-value" style={{ fontSize: '1.2rem', color: '#60a5fa' }}>
-                    {results.vitals?.spo2 || 98}%
-                  </div>
-                </div>
-                <div className="metric-item">
-                  <div className="metric-label">HRV (SDNN)</div>
-                  <div className="metric-value" style={{ fontSize: '1.2rem' }}>
-                    {results.hrv_ms || 42} ms
-                  </div>
-                </div>
-                <div className="metric-item">
-                  <div className="metric-label">Breathing Rate</div>
-                  <div className="metric-value" style={{ fontSize: '1.2rem' }}>
-                    {results.breathing_rate_bpm || 16} rpm
-                  </div>
-                </div>
-                <div className="metric-item">
-                  <div className="metric-label">Stress Index</div>
-                  <div className="metric-value" style={{ fontSize: '1.2rem', color: '#34d399' }}>
-                    {results.stress_index || 'Low'}
-                  </div>
+                <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 4 }}>
+                  <span className="pill" style={{ background: 'rgba(248, 113, 113, 0.15)', color: '#fca5a5', borderColor: 'rgba(248, 113, 113, 0.3)' }}>
+                    {results.hr_zone || (avgBpm < 60 ? 'Resting / Low' : avgBpm <= 100 ? 'Normal Resting Zone' : 'Elevated')}
+                  </span>
                 </div>
               </div>
 
-              {/* Complete Session Trend Graphs */}
-              <div className="profile-card" style={{ marginBottom: 16, padding: '16px' }}>
-                <div className="metric-label" style={{ marginBottom: 12 }}>📈 40-Second Full Session Curves</div>
+              {/* 4-Metric Vitals HUD: High HR, Low HR, HRV (ms), HR Spread */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8, marginBottom: 14 }}>
+                <div className="metric-item" style={{ padding: '10px 6px' }}>
+                  <div className="metric-label" style={{ fontSize: '0.68rem' }}>LOW HR</div>
+                  <div className="metric-value" style={{ fontSize: '1.1rem', color: '#60a5fa' }}>
+                    {minBpm ? minBpm.toFixed(1) : '--'}
+                  </div>
+                  <span style={{ fontSize: '0.65rem', color: 'var(--muted)' }}>bpm</span>
+                </div>
+
+                <div className="metric-item" style={{ padding: '10px 6px' }}>
+                  <div className="metric-label" style={{ fontSize: '0.68rem' }}>HIGH HR</div>
+                  <div className="metric-value" style={{ fontSize: '1.1rem', color: '#f87171' }}>
+                    {maxBpm ? maxBpm.toFixed(1) : '--'}
+                  </div>
+                  <span style={{ fontSize: '0.65rem', color: 'var(--muted)' }}>bpm</span>
+                </div>
+
+                <div className="metric-item" style={{ padding: '10px 6px' }}>
+                  <div className="metric-label" style={{ fontSize: '0.68rem' }}>HRV (SDNN)</div>
+                  <div className="metric-value" style={{ fontSize: '1.1rem', color: '#34d399' }}>
+                    {hrvVal ? `${hrvVal.toFixed(1)}` : '--'}
+                  </div>
+                  <span style={{ fontSize: '0.65rem', color: 'var(--muted)' }}>ms</span>
+                </div>
+
+                <div className="metric-item" style={{ padding: '10px 6px' }}>
+                  <div className="metric-label" style={{ fontSize: '0.68rem' }}>HR SPREAD</div>
+                  <div className="metric-value" style={{ fontSize: '1.1rem', color: '#a78bfa' }}>
+                    {hrRange ? `±${hrRange}` : '--'}
+                  </div>
+                  <span style={{ fontSize: '0.65rem', color: 'var(--muted)' }}>bpm</span>
+                </div>
+              </div>
+
+              {/* Diagram 1: Heart Rate Zone Spectrum Diagram */}
+              <HeartRateZoneDiagram bpm={avgBpm} />
+
+              {/* Diagram 2: Full 40-Second BPM Trajectory Curve */}
+              <div className="profile-card" style={{ marginBottom: 14, padding: '16px' }}>
+                <div className="metric-label" style={{ marginBottom: 8 }}>📈 40-Second Real-Time BPM Trajectory Curve</div>
                 <LineChart 
-                  data={liveHrHistory.length > 0 ? liveHrHistory : [72, 73, 74, 75, 74, 73, 74]} 
+                  data={results.bpm_trend && results.bpm_trend.length > 0 ? results.bpm_trend : liveBpmHistory} 
                   color="#f87171" 
-                  label="Session Heart Rate Trajectory" 
+                  label="Computed BPM per Second" 
                   unit=" bpm" 
-                  height={75}
-                />
-                <LineChart 
-                  data={liveSpo2History.length > 0 ? liveSpo2History : [98, 98, 99, 98, 99, 98]} 
-                  color="#60a5fa" 
-                  label="Session SpO2 Oxygenation Curve" 
-                  unit="%" 
-                  height={75}
+                  height={90}
                 />
               </div>
 
-              {/* Diagnostic Interpretation Breakdown */}
-              <div className="profile-card" style={{ marginBottom: 16, borderColor: 'rgba(16, 185, 129, 0.4)', background: 'rgba(16, 185, 129, 0.05)' }}>
-                <div className="metric-label" style={{ color: 'var(--success)', marginBottom: 8 }}>
-                  🩺 AI Clinical Interpretation
-                </div>
-                <div style={{ fontSize: '0.88rem', lineHeight: 1.5 }}>
-                  {typeof results.analysis === 'object' ? (
-                    <div>
-                      <div>• <strong>Cardiac Rhythm:</strong> {results.analysis.rhythm || 'Normal sinus pattern'}</div>
-                      <div>• <strong>Autonomic Balance:</strong> {results.analysis.ans_balance || 'Healthy sympathetic/parasympathetic tone'}</div>
-                      <div>• <strong>Recommendation:</strong> {results.analysis.recommendation || 'Vitals are well within typical reference intervals.'}</div>
-                    </div>
-                  ) : (
-                    <div>{results.analysis || 'Vitals are stable and within healthy baseline ranges.'}</div>
-                  )}
+              {/* Quality & Environmental Diagnostics */}
+              <div className="profile-card" style={{ marginBottom: 14, padding: '14px' }}>
+                <div className="metric-label" style={{ marginBottom: 10 }}>📡 Optical Telemetry Diagnostics</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, fontSize: '0.85rem' }}>
+                  <div>
+                    <span style={{ color: 'var(--muted)', display: 'block', fontSize: '0.75rem' }}>AVERAGE SNR</span>
+                    <strong>{results.avg_snr_db ?? '--'} dB</strong> <span className={`badge ${getQualityBadgeClass(results.signal_quality)}`} style={{ fontSize: '0.65rem', marginLeft: 4 }}>{results.signal_quality || 'GOOD'}</span>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--muted)', display: 'block', fontSize: '0.75rem' }}>AVERAGE LUMINANCE</span>
+                    <strong>{results.avg_luminance ?? '--'}</strong> <span className={`badge ${getQualityBadgeClass(results.video_quality)}`} style={{ fontSize: '0.65rem', marginLeft: 4 }}>{results.video_quality || 'GOOD'}</span>
+                  </div>
                 </div>
               </div>
+
+              {/* Detailed Suggestions & Interpretations */}
+              <div className="profile-card" style={{ marginBottom: 14, padding: '14px', background: 'rgba(255,255,255,0.02)' }}>
+                <div className="metric-label" style={{ marginBottom: 10 }}>📋 Detailed Signal & Environmental Suggestions</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: '0.86rem', lineHeight: 1.45 }}>
+                  <div>
+                    <strong style={{ color: '#60a5fa' }}>💡 Lighting & Luminance:</strong>
+                    <div style={{ color: 'var(--muted)', marginTop: 2 }}>{interp.luminance_suggestion || 'Optimal lighting conditions observed.'}</div>
+                  </div>
+                  <div>
+                    <strong style={{ color: '#34d399' }}>📡 Signal Quality & SNR:</strong>
+                    <div style={{ color: 'var(--muted)', marginTop: 2 }}>{interp.snr_suggestion || 'High pulsatile confidence.'}</div>
+                  </div>
+                  <div>
+                    <strong style={{ color: '#f59e0b' }}>🎯 Face Tracking & Frame Alignment:</strong>
+                    <div style={{ color: 'var(--muted)', marginTop: 2 }}>{interp.frame_suggestion || 'Stable face tracking throughout recording.'}</div>
+                  </div>
+                  <div>
+                    <strong style={{ color: '#f87171' }}>🩺 Cardiac Assessment:</strong>
+                    <div style={{ color: 'var(--muted)', marginTop: 2 }}>{interp.cardiac_status || (avgBpm >= 60 && avgBpm <= 100 ? 'Normal resting heart rate.' : 'Resting rate outside standard baseline.')}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Rescan Recommendation Banner */}
+              {interp.rescan_recommended ? (
+                <div className="instruction-box" style={{ marginBottom: 16, background: 'rgba(239, 68, 68, 0.12)', borderColor: 'rgba(239, 68, 68, 0.35)', color: '#fca5a5' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                    <div>
+                      <div style={{ fontWeight: 800, fontSize: '0.92rem' }}>⚠️ Re-scan Recommended for Higher Precision</div>
+                      <div style={{ fontSize: '0.78rem', marginTop: 2, color: 'var(--muted)' }}>
+                        {interp.rescan_reason || 'Sub-optimal lighting or motion noise detected.'}
+                      </div>
+                    </div>
+                    <button className="btn btn-primary btn-sm" style={{ whiteSpace: 'nowrap' }} onClick={startSession}>
+                      🔄 Retake Scan
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="instruction-box" style={{ marginBottom: 16, background: 'rgba(16, 185, 129, 0.08)', borderColor: 'rgba(16, 185, 129, 0.3)', color: '#6ee7b7' }}>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>✅ High-Confidence Vital Signs Captured</div>
+                    <div style={{ fontSize: '0.78rem', marginTop: 2, color: 'var(--muted)' }}>
+                      Signal clarity and ambient lighting satisfied all clinical quality thresholds.
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
           <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
             <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => {
               setScanStatus('READY'); setLiveData(null); setResults(null);
-              setLiveHrHistory([]); setLiveSpo2History([]); setLiveBpWaveform([]);
-              go('dashboard');
+              setLiveBpmHistory([]); go('dashboard');
             }}>
               ▶ New Scan
             </button>
@@ -1699,3 +1816,4 @@ export default function App() {
 
   return null;
 }
+

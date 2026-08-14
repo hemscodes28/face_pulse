@@ -214,6 +214,8 @@ input:focus, select:focus {
 .badge-measuring { background: #1d4ed820; color: var(--primary); border: 1px solid var(--primary); }
 .badge-processing { background: #f59e0b20; color: var(--warning); border: 1px solid var(--warning); }
 .badge-completed { background: #10b98120; color: var(--success); border: 1px solid var(--success); }
+.badge-poor { background: #ef444420; color: #f87171; border: 1px solid #ef444450; }
+
 
 /* ─── Instruction ─── */
 .instruction-box {
@@ -404,5 +406,94 @@ input:focus, select:focus {
   border-radius: 2px;
   transition: width 0.4s ease;
 }
+
+/* ─── Biometric Camera Viewport & HUD ─── */
+.camera-container {
+  position: relative;
+  width: 100%;
+  height: 220px;
+  background: #080c14;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  margin-bottom: 14px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.camera-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+}
+
+.camera-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+
+.face-guide-oval {
+  width: 130px;
+  height: 165px;
+  border-radius: 50%;
+  border: 2px dashed rgba(99, 102, 241, 0.6);
+  box-shadow: 0 0 15px rgba(99, 102, 241, 0.2);
+  transition: all 0.3s;
+  position: relative;
+}
+
+.face-guide-oval.measuring {
+  border: 2px solid #10b981;
+  box-shadow: 0 0 25px rgba(16, 185, 129, 0.45);
+  animation: pulseOval 2s infinite ease-in-out;
+}
+
+@keyframes pulseOval {
+  0% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.03); opacity: 1; }
+  100% { transform: scale(1); opacity: 0.8; }
+}
+
+.scan-line {
+  position: absolute;
+  width: 130px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #10b981, transparent);
+  animation: scanMove 2.5s infinite linear;
+}
+
+@keyframes scanMove {
+  0% { top: 15px; opacity: 0; }
+  20% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { top: 150px; opacity: 0; }
+}
+
+.camera-status-pill {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  background: rgba(15, 23, 42, 0.8);
+  backdrop-filter: blur(4px);
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
 
 

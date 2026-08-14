@@ -17,22 +17,77 @@ class MeasurementStartResponse(BaseModel):
     message: str = Field(..., description="Human-readable message.")
     started_at: datetime = Field(..., description="UTC timestamp of when the session was created.")
 
-class MeasurementQuality(BaseModel):
-    overall_score: float
+# ── Model Ingestion Payload (Simple format) ────────────────────
+class ModelIngestPayload(BaseModel):
+    type: str = "measurement"
+    session_id: str
+    frame: Optional[int] = None
+    status: str = "OK"
+    bpm: float
+    snr_db: float
+    luminance: float
+
+# ── Structured Ingestion Models (from face_pulse-Model/schemas.py)
+class MeasurementRGB(BaseModel):
+    r: float = Field(..., description="Mean Red channel value")
+    g: float = Field(..., description="Mean Green channel value")
+    b: float = Field(..., description="Mean Blue channel value")
+
+class MeasurementSignal(BaseModel):
+    bpm: float = Field(..., description="Heart rate in Beats Per Minute (BPM)")
+    snr_db: float = Field(..., description="Signal-to-Noise Ratio in dB")
+    rgb_mean: Optional[MeasurementRGB] = None
+    luminance: float = Field(..., description="Calculated luminance Y channel")
+
+class MeasurementRequest(BaseModel):
+    session_id: str = Field(..., description="Unique scan session ID")
+    timestamp: Optional[datetime] = None
+    frame_number: Optional[int] = 0
+    status: str = Field(default="OK", description="Frame quality status")
+    signal: MeasurementSignal = Field(..., description="Measurement signal metrics")
+
+class MeasurementDataEcho(BaseModel):
+    frame_number: int
     status: str
-    lighting: float
-    face_position: Dict[str, float]
-    face_detected: bool
+    bpm: float
+    snr_db: float
+    rgb_mean: Optional[MeasurementRGB] = None
+    luminance: float
+    timestamp: Optional[datetime] = None
+
+class MeasurementResponse(BaseModel):
+    success: bool = True
+    measurement_id: str
+    session_id: str
+    measurement: MeasurementDataEcho
+    vitals: Optional[Dict[str, Any]] = None
+
+# ── WebSocket Live Telemetry Output ────────────────────────────
+class LiveQualityInfo(BaseModel):
+    snr_db: float
+    signal_quality: str   # EXCELLENT | GOOD | FAIR | POOR
+    luminance: float
+    video_quality: str    # TOO_DARK | GOOD | TOO_BRIGHT
 
 class LiveMeasurementData(BaseModel):
+    type: str = "live_measurement"
     measurement_id: str
-    elapsed_time_sec: float
-    quality: MeasurementQuality
-    instruction: str
-    hr: Optional[float] = None
-    spo2: Optional[float] = None
-    bp: Optional[Any] = None  # Live points
+    bpm: float
+    quality: LiveQualityInfo
+    recommendation: str
+    elapsed_time_sec: Optional[float] = None
+    status: Optional[str] = "MEASURING"
 
+# ── Detailed Interpretations Schema ───────────────────────────
+class MeasurementInterpretations(BaseModel):
+    luminance_suggestion: str
+    snr_suggestion: str
+    frame_suggestion: str
+    rescan_recommended: bool
+    rescan_reason: Optional[str] = None
+    cardiac_status: str
+
+# ── Final Measurement Result Schema ────────────────────────────
 class MeasurementResult(BaseModel):
     id: Optional[str] = None
     measurement_id: str
@@ -41,36 +96,31 @@ class MeasurementResult(BaseModel):
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     
-    # Cardiovascular Metrics
-    heart_rate_bpm: Optional[float] = None
-    systolic_bp_mmhg: Optional[float] = None
-    diastolic_bp_mmhg: Optional[float] = None
+    # Real rPPG Core Outputs
+    bpm: Optional[float] = None
+    average_bpm: Optional[float] = None
+    min_bpm: Optional[float] = None
+    max_bpm: Optional[float] = None
+    hr_range: Optional[float] = None
     hrv_ms: Optional[float] = None
+    hr_zone: Optional[str] = None
+    stress_index: Optional[str] = None
+    bpm_trend: List[float] = Field(default_factory=list)
     
-    # Respiratory & ANS
-    breathing_rate_bpm: Optional[float] = None
-    stress_index: Optional[float] = None
-    cardiac_workload: Optional[float] = None
-    parasympathetic_activity_percent: Optional[float] = None
+    # Quality & Environmental Metrics
+    avg_snr_db: Optional[float] = None
+    signal_quality: Optional[str] = None
+    avg_luminance: Optional[float] = None
+    video_quality: Optional[str] = None
+    recommendation: Optional[str] = None
     
-    # Body Composition
-    bmi: Optional[float] = None
-    bmi_classification: Optional[str] = None
+    # Granular Interpretations & Rescan Flag
+    interpretations: Optional[MeasurementInterpretations] = None
     
-    # Signal Quality
+    # Backward/UI Compatibility Fields
+    heart_rate_bpm: Optional[float] = None
     signal_quality_score: Optional[float] = None
     signal_quality_level: Optional[SignalQualityLevelEnum] = None
-    rescan_recommended: bool = False
-    quality_message: Optional[str] = None
-    
-    # Structured Interpretation
     analysis: Optional[Any] = None
-    
-    # Model Provenance
-    model_name: Optional[str] = None
-    model_version: Optional[str] = None
-    processed_at: Optional[datetime] = None
-    
-    # UI Compatibility Fields
     vitals: Optional[Dict[str, Any]] = None
     quality_summary: Optional[Dict[str, Any]] = None

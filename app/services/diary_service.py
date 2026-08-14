@@ -1,47 +1,55 @@
 from datetime import datetime, timezone
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from app.schemas.diary_schema import DiaryRecord, DiaryDateResponse
 from app.services.diary_store import diary_records
 
 def add_diary_entry(
     user_id: str, 
     measurement_id: str, 
-    recorded_at: datetime, 
-    hr: float, 
-    spo2: float, 
-    bp_str: str,
-    hr_series: List[float] = None,
-    spo2_series: List[float] = None,
-    bp_series: List[List[float]] = None
+    recorded_at: Optional[datetime] = None, 
+    heart_rate: Optional[float] = None,
+    hr: Optional[float] = None, 
+    spo2: Optional[float] = 98.0, 
+    systolic: Optional[int] = 120,
+    diastolic: Optional[int] = 80,
+    bp_str: Optional[str] = None,
+    hr_series: Optional[List[float]] = None,
+    spo2_series: Optional[List[float]] = None,
+    bp_series: Optional[List[List[float]]] = None,
+    **kwargs
 ) -> DiaryRecord:
     """
-    Parses blood pressure string (e.g. "120/80"), creates a DiaryRecord with
-    time-series graph data, and saves it to the in-memory diary_store.
+    Creates a DiaryRecord with BPM time-series data and appends it to diary_store.
+    Supports flexible keyword arguments.
     """
-    systolic = 120
-    diastolic = 80
+    final_hr = float(heart_rate if heart_rate is not None else (hr if hr is not None else 72.0))
+    final_recorded_at = recorded_at or datetime.now(timezone.utc)
+    
+    final_systolic = systolic if systolic is not None else 120
+    final_diastolic = diastolic if diastolic is not None else 80
     
     if bp_str and "/" in bp_str:
         try:
             parts = bp_str.split("/")
-            systolic = int(parts[0].strip())
-            diastolic = int(parts[1].strip())
+            final_systolic = int(parts[0].strip())
+            final_diastolic = int(parts[1].strip())
         except (ValueError, IndexError):
             pass
 
     record = DiaryRecord(
         user_id=user_id,
         measurement_id=measurement_id,
-        recorded_at=recorded_at,
-        heart_rate=float(hr),
-        spo2=float(spo2),
-        systolic=systolic,
-        diastolic=diastolic,
+        recorded_at=final_recorded_at,
+        heart_rate=round(final_hr, 1),
+        spo2=float(spo2 if spo2 is not None else 98.0),
+        systolic=final_systolic,
+        diastolic=final_diastolic,
         hr_series=hr_series or [],
         spo2_series=spo2_series or [],
         bp_series=bp_series or []
     )
     
+    # Store record
     diary_records.append(record.model_dump())
     return record
 
