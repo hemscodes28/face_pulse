@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
@@ -36,46 +37,147 @@ class ChatScreen extends StatefulWidget {
   @override State<ChatScreen> createState() => _ChatScreenState();
 }
 
+class _ChatSession {
+  final String id;
+  String title;
+  final String subtitle;
+  final IconData icon;
+  final List<_Message> messages;
+
+  _ChatSession({
+    required this.id,
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.messages,
+  });
+}
+
 class _ChatScreenState extends State<ChatScreen> {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final _ctrl = TextEditingController();
   final _scrollCtrl = ScrollController();
   bool _typing = false;
+  
   late List<_Message> _msgs;
+  String? _activeSessionId;
+  late List<_ChatSession> _sessions;
+
+  // Static lifecycle persistence fields
+  static List<_ChatSession>? _persistedSessions;
+  static String? _persistedActiveSessionId;
+  static List<_Message>? _persistedMsgs;
 
   @override
   void initState() {
     super.initState();
-    _msgs = [
-      _Message(id: '1', isUser: false, text: "Hello! I'm your Shen AI Health Assistant. How can I help you understand your biometrics today?", timestamp: '9:41 AM'),
-    ];
+    
+    // Initialize persisted state if first entry
+    if (_persistedSessions == null) {
+      _persistedSessions = [
+        _ChatSession(
+          id: 'hrv',
+          title: 'HRV Recovery Discussion',
+          subtitle: 'Explored low HRV values',
+          icon: Icons.favorite_rounded,
+          messages: [
+            _Message(id: 'h1', isUser: true, text: "Can you explain my recent HRV reading?", timestamp: '10:15 AM'),
+            _Message(id: 'h2', isUser: false, text: "Heart Rate Variability (HRV) measures the variation in time between each heartbeat. Your latest reading is 48ms, which is slightly low. Focus on rest today.", timestamp: '10:15 AM',
+              dataCard: {'label': 'LATEST HRV', 'value': widget.latestHrv, 'unit': 'ms', 'type': 'down'}),
+          ],
+        ),
+        _ChatSession(
+          id: 'bmi',
+          title: 'BMI Normal Ranges',
+          subtitle: 'Checked healthy limits',
+          icon: Icons.scale_rounded,
+          messages: [
+            _Message(id: 'm1', isUser: true, text: "What is my BMI and is it healthy?", timestamp: 'Yesterday'),
+            _Message(id: 'm2', isUser: false, text: "Your BMI is ${widget.latestBmi}, which is in the healthy Normal Range. Keep maintaining your active lifestyle!", timestamp: 'Yesterday',
+              dataCard: {'label': 'YOUR BMI', 'value': widget.latestBmi, 'unit': '', 'type': 'normal'}),
+          ],
+        ),
+        _ChatSession(
+          id: 'bp',
+          title: 'Lowering Blood Pressure',
+          subtitle: 'Dietary and exercise tips',
+          icon: Icons.heart_broken_rounded,
+          messages: [
+            _Message(id: 'b1', isUser: true, text: "How to lower blood pressure?", timestamp: '2 days ago'),
+            _Message(id: 'b2', isUser: false, text: "To maintain healthy blood pressure, engage in regular cardiovascular exercise, reduce sodium intake, and manage stress.", timestamp: '2 days ago',
+              dataCard: {'label': 'BP TARGET', 'value': '120/80', 'unit': 'mmHg', 'type': 'normal'}),
+          ],
+        ),
+        _ChatSession(
+          id: 'breath',
+          title: 'Daily Breathing Routine',
+          subtitle: 'Learned box breathing technique',
+          icon: Icons.air_rounded,
+          messages: [
+            _Message(id: 'br1', isUser: true, text: "Show me breathing exercises", timestamp: '3 days ago'),
+            _Message(id: 'br2', isUser: false, text: "Box Breathing exercise:\n1. Inhale for 4 seconds.\n2. Hold for 4 seconds.\n3. Exhale for 4 seconds.\n4. Hold for 4 seconds.\nRepeat to calm your nervous system.", timestamp: '3 days ago'),
+          ],
+        ),
+      ];
+      _persistedMsgs = [];
+      _persistedActiveSessionId = null;
+    }
+
+    _sessions = _persistedSessions!;
+    _msgs = _persistedMsgs!;
+    _activeSessionId = _persistedActiveSessionId;
+    
+    // If navigated with a pre-defined prompt, execute it immediately
     if (widget.initialMessage != null) {
       Timer(const Duration(milliseconds: 400), () {
         if (mounted) {
           _send(widget.initialMessage!);
         }
       });
-    } else {
-      _msgs.addAll([
-        _Message(id: '2', isUser: true, text: "Can you explain my recent HRV reading? It was lower than usual.", timestamp: '9:42 AM'),
-        _Message(id: '3', isUser: false, text: "Certainly. Heart Rate Variability (HRV) measures the variation in time between each heartbeat. A lower HRV can sometimes indicate stress, fatigue, or recovery needs.", timestamp: '9:42 AM',
-          dataCard: {'label': 'LATEST HRV', 'value': widget.latestHrv, 'unit': 'ms', 'type': widget.latestHrv < 50 ? 'down' : 'normal'}),
-        _Message(id: '4', isUser: false, text: "Given it dropped slightly, you might want to focus on rest today. Would you like some guided breathing exercises to help improve it?", timestamp: '9:42 AM'),
-      ]);
     }
   }
 
-  @override void dispose() { _ctrl.dispose(); _scrollCtrl.dispose(); super.dispose(); }
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
 
   void _send(String text) {
     if (text.trim().isEmpty) return;
     final now = TimeOfDay.now();
     final ts = '${now.hourOfPeriod}:${now.minute.toString().padLeft(2, '0')} ${now.period.name.toUpperCase()}';
+    
+    // Create new session if no active session
+    if (_activeSessionId == null) {
+      final newId = '${DateTime.now().millisecondsSinceEpoch}';
+      String title = text.length > 22 ? '${text.substring(0, 20)}...' : text;
+      final newSession = _ChatSession(
+        id: newId,
+        title: title,
+        subtitle: 'Active Chat',
+        icon: Icons.chat_bubble_rounded,
+        messages: [],
+      );
+      setState(() {
+        _sessions.insert(0, newSession);
+        _activeSessionId = newId;
+        _persistedActiveSessionId = newId;
+      });
+    }
+
+    final userMsg = _Message(id: '${DateTime.now().millisecondsSinceEpoch}', isUser: true, text: text, timestamp: ts);
+    
     setState(() {
-      _msgs.add(_Message(id: '${DateTime.now().millisecondsSinceEpoch}', isUser: true, text: text, timestamp: ts));
+      _msgs.add(userMsg);
+      final currentSession = _sessions.firstWhere((s) => s.id == _activeSessionId);
+      currentSession.messages.add(userMsg);
       _ctrl.clear();
       _typing = true;
     });
     _scrollToBottom();
+    
     Timer(const Duration(milliseconds: 1500), () {
       final norm = text.toLowerCase();
       String reply = "I hear you. Regular checkups and rest are key to keeping your metrics in check.";
@@ -89,9 +191,14 @@ class _ChatScreenState extends State<ChatScreen> {
         reply = "To maintain healthy blood pressure:\n• Eat whole grains, fruits, and vegetables.\n• Reduce sodium intake.\n• Engage in daily walking.\n• Manage stress through meditation.";
         card = {'label': 'BP TARGET', 'value': '120/80', 'unit': 'mmHg', 'type': 'normal'};
       }
+      
+      final botMsg = _Message(id: '${DateTime.now().millisecondsSinceEpoch}', isUser: false, text: reply, timestamp: ts, dataCard: card);
+      
       setState(() {
         _typing = false;
-        _msgs.add(_Message(id: '${DateTime.now().millisecondsSinceEpoch}', isUser: false, text: reply, timestamp: ts, dataCard: card));
+        _msgs.add(botMsg);
+        final currentSession = _sessions.firstWhere((s) => s.id == _activeSessionId);
+        currentSession.messages.add(botMsg);
       });
       _scrollToBottom();
     });
@@ -105,136 +212,395 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF3F4F6),
-      body: Column(
+  void _loadHistorySession(String id) {
+    setState(() {
+      _activeSessionId = id;
+      _persistedActiveSessionId = id;
+      final session = _sessions.firstWhere((s) => s.id == id);
+      _msgs.clear();
+      _msgs.addAll(session.messages);
+    });
+    _scrollToBottom();
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          // Header
+          const SizedBox(height: 120),
           Container(
-            color: Colors.white,
-            padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top),
-            child: SizedBox(
-              height: 56,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  Positioned(
-                    left: 12,
-                    child: InnovativeBackButton(onTap: widget.onBack),
-                  ),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      RichText(
-                        text: TextSpan(
-                          children: [
-                            TextSpan(
-                              text: 'care',
-                              style: AppTheme.sansFont(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: AppTheme.textDark,
-                              ),
-                            ),
-                            TextSpan(
-                              text: 'for',
-                              style: AppTheme.sansFont(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w500,
-                                color: AppTheme.primary,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  Positioned(
-                    right: 16,
-                    child: CircleAvatar(radius: 16, backgroundColor: const Color(0xFF2DD4BF), child: const Icon(Icons.person, color: Colors.white, size: 18)),
-                  ),
-                ],
-              ),
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: const Color(0xFF2DD4BF).withOpacity(0.12),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.chat_bubble_outline_rounded,
+              color: Color(0xFF0D9488),
+              size: 40,
             ),
           ),
-
-          // Messages
-          Expanded(
-            child: ListView.builder(
-              controller: _scrollCtrl,
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              itemCount: _msgs.length + (_typing ? 1 : 0) + 1,
-              itemBuilder: (_, i) {
-                if (i == 0) return Center(child: Padding(padding: const EdgeInsets.only(bottom: 16), child: Text('TODAY, 9:41 AM', style: GoogleFonts.hankenGrotesk(fontSize: 10, fontWeight: FontWeight.w700, color: const Color(0xFF9CA3AF), letterSpacing: 2))));
-                final msgIndex = i - 1;
-                if (msgIndex == _msgs.length && _typing) {
-                  return _TypingIndicator();
-                }
-                if (msgIndex >= _msgs.length) return const SizedBox.shrink();
-                return _MessageBubble(msg: _msgs[msgIndex]);
-              },
+          const SizedBox(height: 20),
+          Text(
+            "Start a conversation with Healio",
+            style: AppTheme.sansFont(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: const Color(0xFF1E293B),
             ),
           ),
-
-          // Suggested actions
-          Container(
-            color: Colors.white.withOpacity(0.95),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: Row(children: [
-                _SuggestChip('Yes, show me exercises', () => _send('Yes, show me exercises')),
-                const SizedBox(width: 8),
-                _SuggestChip('What is my BMI?', () => _send('What is my BMI?')),
-                const SizedBox(width: 8),
-                _SuggestChip('How to lower blood pressure?', () => _send('How to lower blood pressure?')),
-              ]),
-            ),
-          ),
-
-          // Input bar
-          Container(
-            color: Colors.white,
-            padding: EdgeInsets.only(bottom: 84 + MediaQuery.of(context).padding.bottom),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-              child: Row(
-                children: [
-                  GestureDetector(
-                    onTap: widget.onBack,
-                    child: Container(width: 40, height: 40, decoration: BoxDecoration(shape: BoxShape.circle, color: const Color(0xFFF3F4F6)), child: const Icon(Icons.menu, size: 20, color: Color(0xFF6B7280))),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Container(
-                      decoration: BoxDecoration(color: const Color(0xFFF9FAFB), borderRadius: BorderRadius.circular(24), border: Border.all(color: const Color(0xFFF3F4F6))),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-                      child: TextField(
-                        controller: _ctrl,
-                        style: GoogleFonts.hankenGrotesk(fontSize: 14, color: const Color(0xFF374151)),
-                        decoration: InputDecoration(
-                          hintText: 'Ask about your health...',
-                          hintStyle: GoogleFonts.hankenGrotesk(fontSize: 14, color: const Color(0xFF9CA3AF)),
-                          border: InputBorder.none,
-                        ),
-                        onSubmitted: _send,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: () => _send(_ctrl.text),
-                    child: Container(width: 40, height: 40, decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF2DD4BF)), child: const Icon(Icons.send, color: Colors.white, size: 18)),
-                  ),
-                ],
+          const SizedBox(height: 10),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 40),
+            child: Text(
+              "Ask health questions, check biometric analysis, or get recovery advice instantly.",
+              textAlign: TextAlign.center,
+              style: AppTheme.sansFont(
+                fontSize: 12,
+                color: const Color(0xFF64748B),
+                height: 1.5,
               ),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildHistoryItem({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.06),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withOpacity(0.1)),
+      ),
+      child: ListTile(
+        onTap: onTap,
+        leading: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: const Color(0xFF2DD4BF).withOpacity(0.15),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(icon, color: const Color(0xFF2DD4BF), size: 18),
+        ),
+        title: Text(
+          title,
+          style: AppTheme.sansFont(
+            fontSize: 13,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+        subtitle: Text(
+          subtitle,
+          style: AppTheme.sansFont(
+            fontSize: 10,
+            color: Colors.white.withOpacity(0.6),
+          ),
+        ),
+        trailing: const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white24, size: 12),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      key: _scaffoldKey,
       extendBody: true,
+      endDrawer: Drawer(
+        backgroundColor: Colors.transparent,
+        child: ClipRRect(
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(24),
+            bottomLeft: Radius.circular(24),
+          ),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+            child: Container(
+              color: const Color(0xFF0F172A).withOpacity(0.85),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+              child: SafeArea(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Recent History',
+                      style: AppTheme.sansFont(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      height: 2,
+                      width: 80,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2DD4BF),
+                        borderRadius: BorderRadius.circular(1),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    Expanded(
+                      child: ListView.builder(
+                        itemCount: _sessions.length,
+                        itemBuilder: (context, idx) {
+                          final session = _sessions[idx];
+                          return _buildHistoryItem(
+                            title: session.title,
+                            subtitle: session.subtitle,
+                            icon: session.icon,
+                            onTap: () {
+                              _loadHistorySession(session.id);
+                              Navigator.pop(context);
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+      body: Stack(
+        children: [
+          // 1. Center Fixed Background Image
+          Positioned.fill(
+            child: Center(
+              child: Opacity(
+                opacity: 0.28,
+                child: Image.asset(
+                  'chatbot_bg.jpg',
+                  width: 280,
+                  height: 280,
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ),
+          ),
+
+          // 2. Light Theme Gradient Overlay for blending
+          Positioned.fill(
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    const Color(0xFFEFF6FF).withOpacity(0.70),
+                    Colors.white.withOpacity(0.78),
+                  ],
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                ),
+              ),
+            ),
+          ),
+
+          // 3. UI Content
+          Positioned.fill(
+            child: Column(
+              children: [
+                // Header (Glassmorphic)
+                ClipRect(
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                    child: Container(
+                      color: Colors.white.withOpacity(0.65),
+                      padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top),
+                      child: Container(
+                        height: 56,
+                        decoration: BoxDecoration(
+                          border: Border(
+                            bottom: BorderSide(
+                              color: Colors.white.withOpacity(0.8),
+                              width: 1.0,
+                            ),
+                          ),
+                        ),
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            Positioned(
+                              left: 12,
+                              child: GestureDetector(
+                                onTap: widget.onBack,
+                                child: Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: Colors.white.withOpacity(0.55),
+                                    border: Border.all(color: Colors.white.withOpacity(0.8)),
+                                  ),
+                                  child: const Icon(Icons.chevron_left_rounded, color: Color(0xFF1E293B), size: 20),
+                                ),
+                              ),
+                            ),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                RichText(
+                                  text: TextSpan(
+                                    children: [
+                                      TextSpan(
+                                        text: 'Hea',
+                                        style: AppTheme.sansFont(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold,
+                                          color: const Color(0xFF0F766E),
+                                        ),
+                                      ),
+                                      TextSpan(
+                                        text: 'lio',
+                                        style: AppTheme.sansFont(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.w500,
+                                          color: const Color(0xFF2DD4BF),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            Positioned(
+                              right: 16,
+                              child: GestureDetector(
+                                onTap: () => _scaffoldKey.currentState?.openEndDrawer(),
+                                child: Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: Colors.white.withOpacity(0.55),
+                                    border: Border.all(color: Colors.white.withOpacity(0.8)),
+                                  ),
+                                  child: const Icon(Icons.menu_rounded, color: Color(0xFF1E293B), size: 20),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
+                // Messages
+                Expanded(
+                  child: ListView.builder(
+                    controller: _scrollCtrl,
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                    itemCount: _msgs.isEmpty ? 1 : _msgs.length + (_typing ? 1 : 0),
+                    itemBuilder: (_, i) {
+                      if (_msgs.isEmpty) {
+                        return _buildEmptyState();
+                      }
+                      final msgIndex = i;
+                      if (msgIndex == _msgs.length && _typing) {
+                        return _TypingIndicator();
+                      }
+                      if (msgIndex >= _msgs.length) return const SizedBox.shrink();
+                      return _MessageBubble(msg: _msgs[msgIndex]);
+                    },
+                  ),
+                ),
+
+                // Suggested actions (show only when chat is empty to start thread)
+                if (_msgs.isEmpty)
+                  ClipRect(
+                    child: Container(
+                      color: Colors.transparent,
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                        child: Row(children: [
+                          _SuggestChip('Yes, show me exercises', () => _send('Yes, show me exercises')),
+                          const SizedBox(width: 8),
+                          _SuggestChip('What is my BMI?', () => _send('What is my BMI?')),
+                          const SizedBox(width: 8),
+                          _SuggestChip('How to lower blood pressure?', () => _send('How to lower blood pressure?')),
+                        ]),
+                      ),
+                    ),
+                  ),
+
+                // Input bar (Glassmorphic small rectangle floating card)
+                Padding(
+                  padding: EdgeInsets.fromLTRB(16, 8, 16, 76 + MediaQuery.of(context).padding.bottom),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                      child: Container(
+                        height: 54,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.7),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: const Color(0xFF2DD4BF),
+                            width: 1.5,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.03),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _ctrl,
+                                style: GoogleFonts.hankenGrotesk(fontSize: 14, color: const Color(0xFF1E293B)),
+                                decoration: InputDecoration(
+                                  hintText: 'Ask Healio anything...',
+                                  hintStyle: GoogleFonts.hankenGrotesk(fontSize: 14, color: const Color(0xFF64748B)),
+                                  border: InputBorder.none,
+                                ),
+                                onSubmitted: _send,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            GestureDetector(
+                              onTap: () => _send(_ctrl.text),
+                              child: Container(
+                                width: 36,
+                                height: 36,
+                                decoration: const BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Color(0xFF2DD4BF),
+                                ),
+                                child: const Icon(
+                                  Icons.arrow_upward_rounded,
+                                  color: Colors.white,
+                                  size: 20,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
       bottomNavigationBar: WavyBottomNavBar(
         currentIndex: 3,
         onTap: (i) {
@@ -252,9 +618,20 @@ class _ChatScreenState extends State<ChatScreen> {
 class _MessageBubble extends StatelessWidget {
   final _Message msg;
   const _MessageBubble({required this.msg});
+
   @override
   Widget build(BuildContext context) {
     final isUser = msg.isUser;
+    final glassBg = isUser 
+        ? const Color(0xFF0F766E).withOpacity(0.85)
+        : Colors.white.withOpacity(0.84);
+    final glassBorder = isUser 
+        ? const Color(0xFF2DD4BF).withOpacity(0.3)
+        : const Color(0xFF94A3B8).withOpacity(0.4);
+    final textColor = isUser 
+        ? Colors.white 
+        : const Color(0xFF1E293B);
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: Row(
@@ -262,60 +639,78 @@ class _MessageBubble extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (!isUser) ...[
-            CircleAvatar(radius: 16, backgroundColor: const Color(0xFFE0F2FE), child: const Icon(Icons.smart_toy, size: 16, color: Color(0xFF0EA5E9))),
+            CircleAvatar(radius: 16, backgroundColor: const Color(0xFFE0F2FE).withOpacity(0.7), child: const Icon(Icons.smart_toy, size: 16, color: Color(0xFF0EA5E9))),
             const SizedBox(width: 8),
           ],
           Flexible(
             child: Column(
               crossAxisAlignment: isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
               children: [
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: isUser ? const Color(0xFF2DD4BF) : Colors.white,
-                    borderRadius: BorderRadius.only(
-                      topLeft: const Radius.circular(16),
-                      topRight: const Radius.circular(16),
-                      bottomLeft: isUser ? const Radius.circular(16) : Radius.zero,
-                      bottomRight: isUser ? Radius.zero : const Radius.circular(16),
-                    ),
-                    boxShadow: const [BoxShadow(color: Color(0x0A000000), blurRadius: 6)],
+                ClipRRect(
+                  borderRadius: BorderRadius.only(
+                    topLeft: const Radius.circular(16),
+                    topRight: const Radius.circular(16),
+                    bottomLeft: isUser ? const Radius.circular(16) : Radius.zero,
+                    bottomRight: isUser ? Radius.zero : const Radius.circular(16),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(msg.text, style: GoogleFonts.hankenGrotesk(fontSize: 14, color: isUser ? Colors.white : const Color(0xFF1F2937), height: 1.5)),
-                      if (msg.dataCard != null) ...[
-                        const SizedBox(height: 10),
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFF3F4F6))),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                Text(msg.dataCard!['label'], style: GoogleFonts.hankenGrotesk(fontSize: 10, fontWeight: FontWeight.w700, color: const Color(0xFF9CA3AF), letterSpacing: 0.8)),
-                                const SizedBox(height: 2),
-                                Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
-                                  Text('${msg.dataCard!['value']}', style: GoogleFonts.hankenGrotesk(fontSize: 22, fontWeight: FontWeight.w700, color: const Color(0xFF111827))),
-                                  if ((msg.dataCard!['unit'] as String).isNotEmpty) ...[const SizedBox(width: 2), Text(msg.dataCard!['unit'], style: GoogleFonts.hankenGrotesk(fontSize: 10, fontWeight: FontWeight.w700, color: const Color(0xFF9CA3AF)))],
-                                ]),
-                              ]),
-                              Container(
-                                width: 36, height: 36,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: msg.dataCard!['type'] == 'down' ? const Color(0xFFFEF2F2) : const Color(0xFFF0FDF4),
-                                  border: Border.all(color: msg.dataCard!['type'] == 'down' ? const Color(0xFFFECACA) : const Color(0xFFBBF7D0)),
-                                ),
-                                child: Icon(msg.dataCard!['type'] == 'down' ? Icons.trending_down : Icons.trending_flat,
-                                  color: msg.dataCard!['type'] == 'down' ? Colors.red : Colors.green, size: 18),
-                              ),
-                            ],
-                          ),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                    child: Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: glassBg,
+                        border: Border.all(color: glassBorder, width: 1.0),
+                        borderRadius: BorderRadius.only(
+                          topLeft: const Radius.circular(16),
+                          topRight: const Radius.circular(16),
+                          bottomLeft: isUser ? const Radius.circular(16) : Radius.zero,
+                          bottomRight: isUser ? Radius.zero : const Radius.circular(16),
                         ),
-                      ],
-                    ],
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.04),
+                            blurRadius: 8,
+                            offset: const Offset(0, 4),
+                          )
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(msg.text, style: GoogleFonts.hankenGrotesk(fontSize: 14, color: textColor, height: 1.5, fontWeight: isUser ? FontWeight.w500 : FontWeight.w600)),
+                          if (msg.dataCard != null) ...[
+                            const SizedBox(height: 10),
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(color: Colors.white.withOpacity(0.7), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white.withOpacity(0.8))),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                    Text(msg.dataCard!['label'], style: GoogleFonts.hankenGrotesk(fontSize: 10, fontWeight: FontWeight.w700, color: const Color(0xFF64748B), letterSpacing: 0.8)),
+                                    const SizedBox(height: 2),
+                                    Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
+                                      Text('${msg.dataCard!['value']}', style: GoogleFonts.hankenGrotesk(fontSize: 22, fontWeight: FontWeight.w700, color: const Color(0xFF0F172A))),
+                                      if ((msg.dataCard!['unit'] as String).isNotEmpty) ...[const SizedBox(width: 2), Text(msg.dataCard!['unit'], style: GoogleFonts.hankenGrotesk(fontSize: 10, fontWeight: FontWeight.w700, color: const Color(0xFF64748B)))],
+                                    ]),
+                                  ]),
+                                  Container(
+                                    width: 36, height: 36,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: msg.dataCard!['type'] == 'down' ? const Color(0xFFFEF2F2).withOpacity(0.8) : const Color(0xFFF0FDF4).withOpacity(0.8),
+                                      border: Border.all(color: msg.dataCard!['type'] == 'down' ? const Color(0xFFFECACA).withOpacity(0.8) : const Color(0xFFBBF7D0).withOpacity(0.8)),
+                                    ),
+                                    child: Icon(msg.dataCard!['type'] == 'down' ? Icons.trending_down : Icons.trending_flat,
+                                      color: msg.dataCard!['type'] == 'down' ? Colors.red : Colors.green, size: 18),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -323,7 +718,7 @@ class _MessageBubble extends StatelessWidget {
           ),
           if (isUser) ...[
             const SizedBox(width: 8),
-            CircleAvatar(radius: 16, backgroundColor: const Color(0xFFF3F4F6), child: const Icon(Icons.person, size: 16, color: Color(0xFF6B7280))),
+            CircleAvatar(radius: 16, backgroundColor: const Color(0xFFF3F4F6).withOpacity(0.7), child: const Icon(Icons.person, size: 16, color: Color(0xFF6B7280))),
           ],
         ],
       ),
@@ -349,15 +744,32 @@ class _TypingIndicatorState extends State<_TypingIndicator> with TickerProviderS
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.only(bottom: 16),
     child: Row(children: [
-      CircleAvatar(radius: 16, backgroundColor: const Color(0xFFE0F2FE), child: const Icon(Icons.smart_toy, size: 16, color: Color(0xFF0EA5E9))),
+      CircleAvatar(radius: 16, backgroundColor: const Color(0xFFE0F2FE).withOpacity(0.7), child: const Icon(Icons.smart_toy, size: 16, color: Color(0xFF0EA5E9))),
       const SizedBox(width: 8),
-      Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(color: Colors.white, borderRadius: const BorderRadius.only(topLeft: Radius.circular(16), topRight: Radius.circular(16), bottomRight: Radius.circular(16)), boxShadow: const [BoxShadow(color: Color(0x0A000000), blurRadius: 6)]),
-        child: Row(children: List.generate(3, (i) => AnimatedBuilder(
-          animation: _anims[i],
-          builder: (_, __) => Container(width: 6, height: 6, margin: const EdgeInsets.symmetric(horizontal: 2), decoration: BoxDecoration(shape: BoxShape.circle, color: Color.lerp(const Color(0xFFD1D5DB), const Color(0xFF9CA3AF), _anims[i].value))),
-        ))),
+      ClipRRect(
+        borderRadius: const BorderRadius.only(topLeft: Radius.circular(16), topRight: Radius.circular(16), bottomRight: Radius.circular(16)),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.68),
+              border: Border.all(color: Colors.white.withOpacity(0.8), width: 1.0),
+              borderRadius: const BorderRadius.only(topLeft: Radius.circular(16), topRight: Radius.circular(16), bottomRight: Radius.circular(16)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.04),
+                  blurRadius: 8,
+                  offset: const Offset(0, 4),
+                )
+              ]
+            ),
+            child: Row(children: List.generate(3, (i) => AnimatedBuilder(
+              animation: _anims[i],
+              builder: (_, __) => Container(width: 6, height: 6, margin: const EdgeInsets.symmetric(horizontal: 2), decoration: BoxDecoration(shape: BoxShape.circle, color: Color.lerp(const Color(0xFF94A3B8), const Color(0xFF475569), _anims[i].value))),
+            ))),
+          ),
+        ),
       ),
     ]),
   );
@@ -369,10 +781,20 @@ class _SuggestChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) => GestureDetector(
     onTap: onTap,
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      decoration: BoxDecoration(color: const Color(0xFFF3F4F6), borderRadius: BorderRadius.circular(20), border: Border.all(color: const Color(0xFFE5E7EB))),
-      child: Text(label, style: GoogleFonts.hankenGrotesk(fontSize: 12, fontWeight: FontWeight.w700, color: const Color(0xFF4B5563))),
+    child: ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.48), 
+            borderRadius: BorderRadius.circular(20), 
+            border: Border.all(color: Colors.white.withOpacity(0.7))
+          ),
+          child: Text(label, style: GoogleFonts.hankenGrotesk(fontSize: 12, fontWeight: FontWeight.w700, color: const Color(0xFF334155))),
+        ),
+      ),
     ),
   );
 }
