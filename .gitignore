@@ -1,0 +1,14 @@
+# Root .gitignore — Face Pulse
+
+# Secrets and environment files
+.env
+*.env
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+
+# IDE
+.vscode/
+.idea/
