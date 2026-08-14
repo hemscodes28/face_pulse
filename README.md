@@ -1,17 +1,13 @@
-# carefor_flutter
+# Face Pulse
 
-A new Flutter project.
+Real-time Mobile rPPG Vital Measurement & Facial HUD Tracking application built with Flutter and Python FastAPI backend engine.
+
+## Features
+- Real-time rPPG pulse extraction & heart rate measurement
+- Cybernetic face-tracking HUD overlay (forehead & cheeks tracking)
+- Asynchronous periodic JSON measurement push (`POST /api/v1/measurements`)
+- Cross-platform support (Android, iOS, Web, Desktop)
 
 ## Getting Started
-
-This project is a starting point for a Flutter application.
-
-A few resources to get you started if this is your first Flutter project:
-
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+1. Run backend server: `python mock_backend_receiver.py`
+2. Run Flutter app: `flutter run`
