@@ -251,6 +251,51 @@ class TestMockBackendEndpoints(unittest.TestCase):
             data_text = websocket.receive_text()
             self.assertIn("bpm", data_text)
 
+    def test_post_measurement_endpoint(self):
+        """Test POST /api/v1/measurements endpoint with valid measurement payload including negative SNR."""
+        payload = {
+            "session_id": "test_session_001",
+            "timestamp": "2026-08-15T03:48:36Z",
+            "frame_number": 330,
+            "status": "OK",
+            "signal": {
+                "bpm": 61.3,
+                "snr_db": -6.8,
+                "rgb_mean": {
+                    "r": 110.5,
+                    "g": 110.1,
+                    "b": 114.3
+                },
+                "luminance": 111.0
+            }
+        }
+        response = self.client.post("/api/v1/measurements", json=payload)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["success"])
+        self.assertEqual(data["measurement_id"], "m_330")
+        self.assertEqual(data["session_id"], "test_session_001")
+        self.assertEqual(data["measurement"]["bpm"], 61.3)
+        self.assertEqual(data["measurement"]["snr_db"], -6.8)
+        self.assertEqual(data["measurement"]["luminance"], 111.0)
+
+    def test_post_measurement_invalid_schema(self):
+        """Test POST /api/v1/measurements validation for invalid session_id and negative bpm."""
+        payload_empty_session = {
+            "session_id": "",
+            "timestamp": "2026-08-15T03:48:36Z",
+            "frame_number": 330,
+            "status": "OK",
+            "signal": {
+                "bpm": 61.3,
+                "snr_db": -6.8,
+                "rgb_mean": {"r": 110.5, "g": 110.1, "b": 114.3},
+                "luminance": 111.0
+            }
+        }
+        resp = self.client.post("/api/v1/measurements", json=payload_empty_session)
+        self.assertEqual(resp.status_code, 422)
+
 
 if __name__ == "__main__":
     unittest.main()

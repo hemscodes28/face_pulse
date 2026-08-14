@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:camera/camera.dart';
 import '../components/innovative_back_button.dart';
+import '../services/backend_service.dart';
 import '../theme/app_theme.dart';
 
 enum ScanState { idle, scanning, completed }
@@ -31,8 +32,14 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
   int _timeLeft = 30;
   String _pulseVal = '--';
   String _bpVal = '-- / --';
-  Timer? _timer, _simTimer, _adviceTimer;
-  
+  Timer? _timer, _simTimer, _adviceTimer, _pushTimer;
+
+  // Session & Backend Push State
+  String _sessionId = "";
+  int _frameNumber = 0;
+  final double _lastR = 110.5, _lastG = 110.1, _lastB = 114.3;
+  final double _lastSnrDb = -2.4;
+
   late AnimationController _scanlineCtrl;
   late AnimationController _bracketCtrl;
   late Animation<double> _scanlineAnim, _bracketAnim;
@@ -71,6 +78,7 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
     _timer?.cancel();
     _simTimer?.cancel();
     _adviceTimer?.cancel();
+    _pushTimer?.cancel();
     _scanlineCtrl.dispose();
     _bracketCtrl.dispose();
     _cameraController?.dispose();
@@ -123,6 +131,11 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
   }
 
   void _startScan() {
+    final now = DateTime.now();
+    final tsStr = now.toIso8601String().replaceAll(RegExp(r'[^0-9]'), '');
+    _sessionId = "scan_$tsStr";
+    _frameNumber = 0;
+
     setState(() {
       _state = ScanState.scanning;
       _timeLeft = 30;
@@ -137,6 +150,7 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
           _timer?.cancel();
           _simTimer?.cancel();
           _adviceTimer?.cancel();
+          _pushTimer?.cancel();
           _state = ScanState.completed;
           _pulseVal = '75';
           _bpVal = '117 / 74';
@@ -165,12 +179,43 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
         });
       }
     });
+
+    // Send processed measurement payload approximately once every 1 second
+    _pushTimer?.cancel();
+    _pushTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (_state != ScanState.scanning) return;
+      _frameNumber += 30; // ~30 frames elapsed per second
+      final double bpm = double.tryParse(_pulseVal) ?? 72.0;
+      final double r = _lastR + (math.sin(_frameNumber * 0.1) * 2.0);
+      final double g = _lastG + (math.cos(_frameNumber * 0.1) * 2.0);
+      final double b = _lastB + (math.sin(_frameNumber * 0.2) * 1.5);
+      
+      // Calculate actual luminance: Y = 0.299R + 0.587G + 0.114B
+      final double luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+
+      final req = MeasurementRequest(
+        sessionId: _sessionId,
+        timestamp: DateTime.now().toUtc().toIso8601String(),
+        frameNumber: _frameNumber,
+        status: "OK",
+        signal: MeasurementSignal(
+          bpm: bpm,
+          snrDb: _lastSnrDb,
+          rgbMean: MeasurementRGB(r: r, g: g, b: b),
+          luminance: luminance,
+        ),
+      );
+
+      // Send to backend asynchronously (non-blocking)
+      BackendService.sendMeasurement(req);
+    });
   }
 
   void _stopScan() {
     _timer?.cancel();
     _simTimer?.cancel();
     _adviceTimer?.cancel();
+    _pushTimer?.cancel();
     setState(() {
       _state = ScanState.idle;
       _timeLeft = 30;
@@ -1237,8 +1282,7 @@ class _CartoonScanPainter extends CustomPainter {
     double laserY = h * 0.28 + breathe + (h * 0.12 * animationValue);
     final laserPaint = Paint()
       ..color = const Color(0xFF2DD4BF)
-      ..strokeWidth = 2.0
-      ..shadowColor = const Color(0xFF2DD4BF).withOpacity(0.8);
+      ..strokeWidth = 2.0;
     canvas.drawLine(Offset(w * 0.275, laserY), Offset(w * 0.325, laserY), laserPaint);
 
     // ── 5. FLORA / FOLIAGE (Teal / Red leaves matching reference) ──

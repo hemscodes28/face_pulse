@@ -1,17 +1,24 @@
 """
 Mock Backend Receiver for FacePulseEngine.
-FastAPI application providing WebSocket streaming endpoint `/ws/raw-rppg-stream`
-and HTTP batch endpoint `/api/v1/rppg/raw-batch`.
-Processes incoming raw temporal signals through RPPGSignalProcessor and logs live heart rate metrics.
+FastAPI application providing WebSocket streaming endpoint `/ws/raw-rppg-stream`,
+HTTP batch endpoint `/api/v1/rppg/raw-batch`, and HTTP Measurement Push endpoint `/api/v1/measurements`.
 """
 
 import logging
-from typing import Dict
+from typing import Dict, List
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import ValidationError
 
-from schemas import ProcessedRPPGMetrics, QualityStatus, RawRPPGBatch, RawRPPGFrame
+from schemas import (
+    MeasurementDataEcho,
+    MeasurementRequest,
+    MeasurementResponse,
+    ProcessedRPPGMetrics,
+    QualityStatus,
+    RawRPPGBatch,
+    RawRPPGFrame,
+)
 from rppg_processor import RPPGSignalProcessor
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -19,7 +26,7 @@ logger = logging.getLogger("MockBackendReceiver")
 
 app = FastAPI(
     title="FacePulseEngine Backend Receiver",
-    description="FastAPI WebSocket and HTTP Batch Backend Receiver for real-time rPPG metrics processing.",
+    description="FastAPI WebSocket and HTTP Backend Receiver for real-time rPPG metrics processing.",
     version="1.0.0",
 )
 
@@ -34,6 +41,8 @@ app.add_middleware(
 
 # In-memory dictionary mapping client session IDs to active RPPGSignalProcessor instances
 active_processors: Dict[str, RPPGSignalProcessor] = {}
+# In-memory storage for received measurements grouped by session_id
+stored_measurements: Dict[str, List[MeasurementRequest]] = {}
 
 
 @app.get("/health")
@@ -42,14 +51,70 @@ def health_check():
     return {"status": "ok", "service": "FacePulseEngine Mock Backend"}
 
 
+@app.get("/api/health")
+def api_health_check():
+    """API Health check endpoint compatibility."""
+    return {"status": "ok", "service": "FacePulseEngine Mock Backend"}
+
+
 @app.get("/api/v1/rppg/status")
 def get_status():
     """Returns active streams and server info."""
     return {
         "active_streams": len(active_processors),
+        "total_sessions_stored": len(stored_measurements),
         "status": "online",
-        "supported_codecs": ["raw_json_v1"],
+        "supported_codecs": ["raw_json_v1", "measurement_push_v1"],
     }
+
+
+@app.post("/api/v1/measurements", response_model=MeasurementResponse, status_code=200)
+async def post_measurement(request: MeasurementRequest):
+    """
+    HTTP POST endpoint receiving structured measurement push payload periodically (~1 Hz).
+    Validates payload, logs measurement details, and returns structured JSON response.
+    """
+    session_id = request.session_id
+    frame_number = request.frame_number
+    bpm = request.signal.bpm
+    snr_db = request.signal.snr_db
+    luminance = request.signal.luminance
+
+    # Clear, formatted backend log output as requested
+    print(
+        f"\n[MEASUREMENT]\n"
+        f"Session: {session_id}\n"
+        f"Frame: {frame_number}\n"
+        f"BPM: {bpm:.1f}\n"
+        f"SNR: {snr_db:.1f} dB\n"
+        f"Luminance: {luminance:.1f}\n"
+    )
+    logger.info(
+        f"[MEASUREMENT RECEIVE] Session: {session_id} | Frame #{frame_number} | "
+        f"BPM: {bpm:.1f} | SNR: {snr_db:.1f} dB | Luminance: {luminance:.1f}"
+    )
+
+    if session_id not in stored_measurements:
+        stored_measurements[session_id] = []
+    stored_measurements[session_id].append(request)
+
+    measurement_id = f"m_{frame_number}"
+
+    return MeasurementResponse(
+        success=True,
+        measurement_id=measurement_id,
+        session_id=session_id,
+        measurement=MeasurementDataEcho(
+            frame_number=frame_number,
+            status=request.status,
+            bpm=bpm,
+            snr_db=snr_db,
+            rgb_mean=request.signal.rgb_mean,
+            luminance=luminance,
+            timestamp=request.timestamp,
+        ),
+        vitals=None,
+    )
 
 
 @app.websocket("/ws/raw-rppg-stream")
@@ -150,5 +215,5 @@ async def post_raw_rppg_batch(batch: RawRPPGBatch):
 
 if __name__ == "__main__":
     import uvicorn
-    logger.info("Starting FacePulseEngine Mock Backend Server on http://0.0.0.0:8000...")
+    logger.info("Starting FacePulseEngine Backend Server on http://0.0.0.0:8000...")
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
