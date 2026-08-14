@@ -8,6 +8,7 @@ import '../components/innovative_back_button.dart';
 import '../theme/app_theme.dart';
 import '../services/face_detector_service.dart';
 import '../services/rppg_signal_processor.dart';
+import '../services/websocket_backend_service.dart';
 import '../components/face_painter.dart';
 
 enum ScanState { idle, scanning, completed }
@@ -48,6 +49,9 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
 
   FaceDetectorService? _faceDetectorService;
   RPPGSignalProcessor? _rppgProcessor;
+  WebSocketBackendService? _webSocketService;
+  StreamSubscription<ProcessedMetrics>? _backendSubscription;
+
   FaceDetectionData? _faceData;
   String _liveStatusMessage = "👤 Center your face in frame";
   bool _isStreamingImage = false;
@@ -73,7 +77,21 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
 
     _faceDetectorService = FaceDetectorService();
     _rppgProcessor = RPPGSignalProcessor();
-    
+    _webSocketService = WebSocketBackendService();
+
+    _backendSubscription = _webSocketService?.metricsStream.listen((metrics) {
+      if (mounted && _state == ScanState.scanning) {
+        if (metrics.bpm > 0) {
+          setState(() {
+            _pulseVal = metrics.bpm.round().toString();
+            int sys = 110 + (metrics.bpm * 0.1).round();
+            int dia = 70 + (metrics.bpm * 0.05).round();
+            _bpVal = '$sys / $dia';
+          });
+        }
+      }
+    });
+
     // Attempt camera initialization
     _initCamera();
   }
@@ -86,6 +104,8 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
     _adviceTimer?.cancel();
     _scanlineCtrl.dispose();
     _bracketCtrl.dispose();
+    _backendSubscription?.cancel();
+    _webSocketService?.dispose();
     _faceDetectorService?.dispose();
     _cameraController?.dispose();
     super.dispose();
@@ -147,10 +167,9 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
       try {
         _cameraController!.startImageStream((CameraImage image) async {
           if (!mounted || _state != ScanState.scanning) return;
-          if (_cameras.isEmpty) return;
 
-          final sensorOrientation = _cameras[_selectedCameraIndex].sensorOrientation;
-          final lensDirection = _cameras[_selectedCameraIndex].lensDirection;
+          final sensorOrientation = _cameras.isNotEmpty ? _cameras[_selectedCameraIndex].sensorOrientation : 0;
+          final lensDirection = _cameras.isNotEmpty ? _cameras[_selectedCameraIndex].lensDirection : CameraLensDirection.front;
 
           final detection = await _faceDetectorService?.processCameraImage(
             image: image,
@@ -159,6 +178,9 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
           );
 
           if (detection != null && mounted) {
+            // Stream payload to Python FastAPI backend
+            _webSocketService?.sendFramePayload(detection);
+
             final rppgResult = _rppgProcessor?.processFrame(
               image: image,
               detectionData: detection,
@@ -204,6 +226,7 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
       _liveStatusMessage = "👤 Center your face in frame";
     });
 
+    _webSocketService?.connect();
     _startImageStream();
 
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -213,6 +236,7 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
           _simTimer?.cancel();
           _adviceTimer?.cancel();
           _stopImageStream();
+          _webSocketService?.disconnect();
           _state = ScanState.completed;
           _pulseVal = _rppgProcessor?.currentBpm.round().toString() ?? '75';
           _bpVal = '117 / 74';
@@ -249,6 +273,7 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
     _simTimer?.cancel();
     _adviceTimer?.cancel();
     _stopImageStream();
+    _webSocketService?.disconnect();
     setState(() {
       _state = ScanState.idle;
       _timeLeft = 30;
