@@ -6,6 +6,15 @@ Import all models here so that Alembic's env.py can discover
 them through Base.metadata when it imports this package.
 """
 
-from app.models.measurement import Measurement, MeasurementStatus  # noqa: F401
+from app.models.measurement import Measurement, MeasurementStatus
+from app.models.user import User, UserRole
+from app.models.user_guardian import GuardianRelationshipStatus, UserGuardian
 
-__all__ = ["Measurement", "MeasurementStatus"]
+__all__ = [
+    "User",
+    "UserRole",
+    "Measurement",
+    "MeasurementStatus",
+    "UserGuardian",
+    "GuardianRelationshipStatus",
+]

@@ -1,36 +1,140 @@
 # Face Pulse — Database Design Documentation
 
-> **Branch:** `backend/database`
+> **Branch:** `backend/database-guardians`
 > **Last updated:** 2026-08-14
-> **Scope:** Initial measurement-session schema only.
+> **Scope:** Milestone 1 (Measurement Session), Milestone 2 (User Foundation), & Milestone 2.5 (Guardian Relationships & Sharing Permissions).
 
 ---
 
 ## Overview
 
-The Face Pulse backend uses **PostgreSQL** as its primary relational store,
-accessed through **SQLAlchemy 2.x** (async) in the application and via
-**Alembic** for schema migrations.
+The Face Pulse backend uses **PostgreSQL** as its primary relational store, accessed through **SQLAlchemy 2.x** (async) in the application and via **Alembic** for schema migrations.
 
-The central database entity in the current phase is the **`measurements`**
-table. Every measurement session initiated by a user maps to exactly one row
-in this table. The row's `id` (UUID) is the canonical `measurement_id`
-that flows from the database → FastAPI service → Flutter frontend.
+The database architecture is centered around three primary entities:
 
 ```
-Flutter Frontend
-     │
-     │  { "measurement_id": "<UUID>" }
-     ▼
-FastAPI Backend  (POST /api/v1/measurements/start — to be implemented)
-     │
-     │  INSERT INTO measurements ...
-     ▼
-Service Layer
-     │
-     ▼
-PostgreSQL — measurements table
+                  ┌──────────┐
+                  │  users   │
+                  └────┬─────┘
+                       │
+       ┌───────────────┴───────────────┐
+  1:N  │                          1:N  │ (via user_guardians)
+       ▼                               ▼
+┌──────────────┐              ┌─────────────────┐
+│ measurements │              │ user_guardians  │
+└──────────────┘              └─────────────────┘
 ```
+
+---
+
+## Identifiers & Core Rules
+
+> **CRITICAL ARCHITECTURAL RULE: IDENTIFIER INDEPENDENCE**
+> 
+> `users.id`, `measurements.id`, and `user_guardians.id` are **THREE INDEPENDENT UUID IDENTIFIERS**.
+> 
+> - `users.id`: Primary key for a user account.
+> - `measurements.id`: Primary key for a unique measurement session.
+> - `user_guardians.id`: Primary key for a guardian relationship record.
+> 
+> IDs are never reused or shared across these entities.
+
+---
+
+## `users` Table
+
+### Schema
+
+| Column          | PostgreSQL Type    | Nullable | Default              | Notes                                                |
+|-----------------|--------------------|----------|----------------------|------------------------------------------------------|
+| `id`            | `UUID`             | NOT NULL | `gen_random_uuid()`  | Primary key UUID                                     |
+| `full_name`     | `VARCHAR(100)`     | NOT NULL | —                    | Full name of the user                                |
+| `email`         | `VARCHAR(255)`     | NOT NULL | —                    | Unique user email address, indexed                    |
+| `password_hash` | `VARCHAR(255)`     | NOT NULL | —                    | Hashed password (plaintext forbidden)                |
+| `role`          | `user_role` (ENUM) | NOT NULL | `'USER'`             | Role enum (allowed value: `USER`)                    |
+| `is_active`     | `BOOLEAN`          | NOT NULL | `TRUE`               | Boolean active account flag                          |
+| `created_at`    | `TIMESTAMPTZ`      | NOT NULL | `now()`              | Account creation timestamp (set by DB)               |
+| `updated_at`    | `TIMESTAMPTZ`      | NOT NULL | `now()`              | Account last update timestamp (set by DB)            |
+
+### Role Rationale & Guardian Identity
+
+- **No `GUARDIAN` Role:** A guardian is **not** a user role (`role = "GUARDIAN"`). Every account in `users` has `role = 'USER'`.
+- Both the data owner and the guardian recipient exist as standard rows in `users`.
+- A guardian relationship is established purely by connecting two `users.id` records in `user_guardians`.
+- This enables a user account to be both a data owner and a guardian for other family members simultaneously.
+
+---
+
+## `user_guardians` Table
+
+### Architecture
+
+```
+USER A (data owner)
+  │
+  │ user_id
+  ▼
+USER_GUARDIANS (id: UUID)
+  │
+  │ guardian_user_id
+  ▼
+USER B (guardian recipient)
+```
+
+Both `User A` and `User B` exist in the `users` table with `role = 'USER'`.
+
+### Schema
+
+| Column             | PostgreSQL Type                       | Nullable | Default              | Notes                                                         |
+|--------------------|---------------------------------------|----------|----------------------|---------------------------------------------------------------|
+| `id`               | `UUID`                                | NOT NULL | `gen_random_uuid()`  | Independent primary key UUID                                  |
+| `user_id`          | `UUID`                                | NOT NULL | —                    | Foreign Key referencing `users.id` (data owner), indexed      |
+| `guardian_user_id` | `UUID`                                | NOT NULL | —                    | Foreign Key referencing `users.id` (guardian recipient), indexed |
+| `status`           | `guardian_relationship_status` (ENUM) | NOT NULL | `'PENDING'`          | Relationship lifecycle status (`PENDING`, `ACCEPTED`, `REJECTED`, `REVOKED`) |
+| `share_results`    | `BOOLEAN`                             | NOT NULL | `FALSE`              | Permission flag for viewing completed measurement results     |
+| `share_trends`     | `BOOLEAN`                             | NOT NULL | `FALSE`              | Permission flag for viewing historical measurement trends     |
+| `share_alerts`     | `BOOLEAN`                             | NOT NULL | `FALSE`              | Permission flag for receiving measurement alerts              |
+| `created_at`       | `TIMESTAMPTZ`                         | NOT NULL | `now()`              | Relationship creation timestamp                               |
+| `updated_at`       | `TIMESTAMPTZ`                         | NOT NULL | `now()`              | Relationship last update timestamp                            |
+
+### Database Constraints
+
+1. **Foreign Keys:** `user_id` -> `users.id` and `guardian_user_id` -> `users.id`. **No `ON DELETE CASCADE`**, preserving metadata.
+2. **Self-Guardian Prevention Check Constraint:** `ck_user_guardians_prevent_self_guardian` (`user_id <> guardian_user_id`). A user cannot be their own guardian.
+3. **Duplicate Relationship Unique Constraint:** `uq_user_guardians_user_guardian` on `(user_id, guardian_user_id)`. Prevents duplicate invitations/relationships between the same pair.
+
+### Status Lifecycle
+
+```
+           ┌──────────┐
+  Invite   │          │
+ ────────► │ PENDING  ├───────────┐ Reject
+           │          │           │
+           └────┬─────┘           ▼
+                │ Accept    ┌──────────┐
+                ▼           │ REJECTED │
+           ┌──────────┐     └──────────┘
+           │ ACCEPTED │
+           └────┬─────┘
+                │ Revoke
+                ▼
+           ┌──────────┐
+           │ REVOKED  │
+           └──────────┘
+```
+
+- `ACCEPTED` represents an active guardian relationship.
+- Permissions (`share_results`, `share_trends`, `share_alerts`) are only granted when `status = 'ACCEPTED'` **and** the specific permission flag is `TRUE`.
+
+### Future Guardian API Architecture
+
+The schema supports the following planned API endpoints:
+- `POST /api/v1/guardians/invite` — Creates `user_guardians` record in `PENDING` state.
+- `POST /api/v1/guardians/invitations/{relationship_id}/accept` — Updates status to `ACCEPTED`.
+- `POST /api/v1/guardians/invitations/{relationship_id}/reject` — Updates status to `REJECTED`.
+- `GET /api/v1/guardians` — Lists active guardians (`ACCEPTED`).
+- `DELETE /api/v1/guardians/{relationship_id}` — Updates status to `REVOKED`.
+- `PATCH /api/v1/guardians/{relationship_id}/permissions` — Updates `share_results`, `share_trends`, `share_alerts`.
 
 ---
 
@@ -38,306 +142,25 @@ PostgreSQL — measurements table
 
 ### Schema
 
-| Column         | PostgreSQL Type              | Nullable | Default              | Notes                                    |
-|----------------|------------------------------|----------|----------------------|------------------------------------------|
-| `id`           | `UUID`                       | NOT NULL | `gen_random_uuid()`  | Primary key. Returned as `measurement_id` |
-| `user_id`      | `UUID`                       | NOT NULL | —                    | Indexed. No FK yet (see below)           |
-| `status`       | `measurement_status` (ENUM)  | NOT NULL | `'READY'`            | Lifecycle state                          |
-| `started_at`   | `TIMESTAMPTZ`                | NOT NULL | `now()`              | Set by DB on insert                      |
-| `completed_at` | `TIMESTAMPTZ`                | YES      | `NULL`               | Set when session ends                    |
-| `created_at`   | `TIMESTAMPTZ`                | NOT NULL | `now()`              | Set by DB on insert                      |
-
-### SQL (equivalent)
-
-```sql
-CREATE TYPE measurement_status AS ENUM (
-    'READY', 'MEASURING', 'PROCESSING', 'COMPLETED', 'FAILED'
-);
-
-CREATE TABLE measurements (
-    id           UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id      UUID         NOT NULL,
-    status       measurement_status NOT NULL DEFAULT 'READY',
-    started_at   TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    completed_at TIMESTAMPTZ,
-    created_at   TIMESTAMPTZ  NOT NULL DEFAULT now()
-);
-
-CREATE INDEX ix_measurements_user_id ON measurements (user_id);
-```
+| Column         | PostgreSQL Type              | Nullable | Default              | Notes                                                |
+|----------------|------------------------------|----------|----------------------|------------------------------------------------------|
+| `id`           | `UUID`                       | NOT NULL | `gen_random_uuid()`  | Primary key. Exposed as `measurement_id`             |
+| `user_id`      | `UUID`                       | NOT NULL | —                    | Foreign Key referencing `users.id`, indexed           |
+| `status`       | `measurement_status` (ENUM)  | NOT NULL | `'READY'`            | Lifecycle state (`READY`, `MEASURING`, `PROCESSING`, `COMPLETED`, `FAILED`) |
+| `started_at`   | `TIMESTAMPTZ`                | NOT NULL | `now()`              | Session start timestamp                              |
+| `completed_at` | `TIMESTAMPTZ`                | YES      | `NULL`               | Set when session ends                                |
+| `created_at`   | `TIMESTAMPTZ`                | NOT NULL | `now()`              | Row creation timestamp                               |
 
 ---
 
-## Column Details
-
-### `id` — UUID Primary Key
-
-- Type: `UUID` (PostgreSQL native, stored as 16-byte binary, displayed as hex string)
-- Generated by: `gen_random_uuid()` (PostgreSQL 13+) as the server-side default,
-  plus `uuid.uuid4()` as a Python-side default for in-memory use (tests, etc.)
-- Exposed to the API as `measurement_id` in JSON responses
-- Why UUID over BIGSERIAL?
-  - Safe to expose externally (not guessable/sequential)
-  - Compatible with distributed generation without coordination
-  - Standard for healthcare identifiers
-
-### `user_id` — User Reference
-
-- Type: `UUID`
-- NOT NULL — every measurement must belong to a user
-- Indexed via `ix_measurements_user_id` for efficient per-user queries
-- **No foreign-key constraint yet.** The `users` table is defined on a
-  separate branch. Once that schema is finalised and merged, a migration
-  will add `REFERENCES users(id)`.
-- Do not invent or create a parallel users table from this branch.
-
-### `status` — Measurement Lifecycle State
-
-- Type: PostgreSQL `ENUM` named `measurement_status`
-- Allowed values:
-
-  | Value        | Meaning                                                    |
-  |--------------|------------------------------------------------------------|
-  | `READY`      | Record created; waiting for client to begin camera capture |
-  | `MEASURING`  | Client is actively capturing facial video                  |
-  | `PROCESSING` | Video complete; ML pipeline is running                     |
-  | `COMPLETED`  | All signals computed and stored                            |
-  | `FAILED`     | Unrecoverable error at any stage                           |
-
-- Default: `READY` (both server-side and application-side)
-- Transitions:
-  ```
-  READY → MEASURING → PROCESSING → COMPLETED
-                           ↓              ↓
-                         FAILED        FAILED
-  READY → FAILED  (e.g. client disconnect before capture starts)
-  ```
-- The ENUM is enforced at the **PostgreSQL level** (not just application level),
-  so invalid strings cannot be stored even through raw SQL.
-
-### `started_at` — Session Start Timestamp
-
-- Type: `TIMESTAMPTZ` (timestamp with time zone)
-- NOT NULL
-- Default: `now()` (database server time at insert)
-- Represents when the measurement session began, not when the row was created
-  (though in the initial implementation both happen at the same time).
-- Future: may be set explicitly by the application once the start-measurement
-  endpoint is implemented.
-
-### `completed_at` — Session End Timestamp
-
-- Type: `TIMESTAMPTZ`
-- **NULLABLE** — `NULL` until the session reaches `COMPLETED` or `FAILED`
-- Set by the backend service when transitioning to a terminal state
-- Not set by the database automatically (the DB does not know when processing ends)
-
-### `created_at` — Row Creation Timestamp
-
-- Type: `TIMESTAMPTZ`
-- NOT NULL
-- Default: `now()` (database server time at insert)
-- Audit field — records exactly when the row was written to the DB
-- Never modified after insert
-
----
-
-## Why Raw Camera / Video Data Is NOT Stored in PostgreSQL
-
-This is an intentional design decision with multiple motivations:
-
-1. **Performance** — Raw video frames (4K at 30fps) can be hundreds of MB per
-   session. Storing BLOBs in PostgreSQL degrades database performance, bloats
-   WAL logs, and makes backups unmanageable.
-
-2. **Healthcare compliance** — Raw facial video is biometric PII. Storing it in
-   the relational DB (co-located with session metadata) increases the blast
-   radius of any data breach. Separate storage with its own access controls and
-   encryption is safer.
-
-3. **Separation of concerns** — The relational DB is optimised for structured
-   metadata, queries, and transactions. Object stores (S3, GCS, Azure Blob) are
-   optimised for large binary payloads with lifecycle policies and CDN delivery.
-
-4. **Extensibility** — A `video_store_key` column can be added to `measurements`
-   later (pointing to an object-store path) without coupling the DB schema to
-   the storage backend.
-
-Raw camera frames, rPPG signals, ML tensors, and model internals will be
-handled by a dedicated storage service defined after the ML/signal-processing
-contracts are finalised.
-
----
-
-## Status Lifecycle Diagram
+## Future Health Diary Architecture
 
 ```
-                  ┌─────────┐
-   INSERT         │         │
-   ──────────────►│  READY  │
-                  │         │
-                  └────┬────┘
-                       │  client begins capture
-                       ▼
-                  ┌──────────┐
-                  │MEASURING │
-                  └────┬─────┘
-                       │  capture complete
-                       ▼
-                  ┌───────────┐
-                  │PROCESSING │
-                  └─────┬─────┘
-                        │  ML pipeline done
-                        ▼
-                  ┌───────────┐
-                  │ COMPLETED │
-                  └───────────┘
-
-  Any state ──► FAILED  (on unrecoverable error)
+User (users)
+  │
+  └── 1:N ──► Measurements (measurements)
+                │
+                └── 1:1 / 1:N ──► Measurement Results (future milestone)
 ```
 
----
-
-## UUID Usage
-
-The `id` column is the single source of truth for identifying a measurement.
-It is:
-
-- Generated server-side at insert time (`gen_random_uuid()`)
-- Returned to the FastAPI service immediately after `INSERT`
-- Passed to the Flutter frontend as `measurement_id` in the JSON response
-- Used as the key for all subsequent API calls in the measurement lifecycle
-
-```json
-{
-  "measurement_id": "550e8400-e29b-41d4-a716-446655440000"
-}
-```
-
----
-
-## Timestamp Behaviour
-
-Both `started_at` and `created_at` use `server_default=now()`, which means
-PostgreSQL evaluates `now()` at the time of the `INSERT` statement. This:
-
-- Is independent of the application server clock (avoids drift issues)
-- Is always timezone-aware (`TIMESTAMPTZ`)
-- Cannot be accidentally left NULL by the application
-
-`completed_at` is application-controlled (the app sets it when the session ends)
-and is `NULL` until that point.
-
----
-
-## Relationship with Future `users` Table
-
-The `user_id` column references a user, but without a formal `FOREIGN KEY`
-constraint at this stage. The planned relationship is:
-
-```
-users (defined on another branch)
-  id UUID PRIMARY KEY
-
-measurements
-  user_id UUID NOT NULL  ──► users.id  (FK to be added later)
-```
-
-Once the `users` table schema is agreed and merged into `develop`, a new
-Alembic migration on this branch will add:
-
-```sql
-ALTER TABLE measurements
-  ADD CONSTRAINT fk_measurements_user_id
-  FOREIGN KEY (user_id) REFERENCES users(id);
-```
-
----
-
-## Future Extension Points
-
-The schema is intentionally minimal. Planned additions (in separate migrations):
-
-| Addition                  | When                                      |
-|---------------------------|-------------------------------------------|
-| FK to `users.id`          | After users table is merged               |
-| `heart_rate`, `spo2`, etc.| After ML/signal-processing contracts      |
-| `video_store_key`         | After object-store strategy is decided    |
-| `signal_quality`          | After rPPG pipeline is finalised          |
-| `analysis`, `summary`     | After LLM/reporting pipeline is finalised |
-| FK to `results` table     | After detailed result schema is designed  |
-
-Each addition will be a separate Alembic migration to maintain a clean
-and auditable migration history.
-
----
-
-## Running Migrations
-
-### Prerequisites
-
-```bash
-# 1. Start PostgreSQL (Docker)
-docker compose up -d
-
-# 2. Copy env file and fill in credentials
-cp .env.example .env
-
-# 3. Install Python dependencies
-cd backend
-pip install -r requirements.txt
-```
-
-### Apply migrations
-
-```bash
-cd backend
-alembic upgrade head
-```
-
-### Verify
-
-```bash
-# Check current revision
-alembic current
-
-# Connect with psql (Docker)
-docker compose exec postgres psql -U face_pulse_user -d face_pulse
-
-# Inside psql:
-\d measurements
-SELECT enum_range(NULL::measurement_status);
-```
-
-### Roll back
-
-```bash
-cd backend
-alembic downgrade base   # roll all the way back
-# or
-alembic downgrade -1     # roll back one migration
-```
-
----
-
-## Running Tests
-
-Tests use SQLite (no PostgreSQL required):
-
-```bash
-cd backend
-pip install -r requirements.txt
-pytest tests/ -v
-```
-
-For integration tests against a real PostgreSQL instance, set:
-
-```bash
-TEST_DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/face_pulse_test
-pytest tests/ -v
-```
-
----
-
-*This document covers only implemented features. Do not add documentation
-for features that have not yet been implemented.*
+Guardian access will provide a controlled view of selected measurement results based on `user_guardians` permissions (`share_results`, `share_trends`, `share_alerts`).
