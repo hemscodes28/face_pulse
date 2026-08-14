@@ -6,6 +6,9 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:camera/camera.dart';
 import '../components/innovative_back_button.dart';
 import '../theme/app_theme.dart';
+import '../services/face_detector_service.dart';
+import '../services/rppg_signal_processor.dart';
+import '../components/face_painter.dart';
 
 enum ScanState { idle, scanning, completed }
 
@@ -37,11 +40,17 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
   late AnimationController _bracketCtrl;
   late Animation<double> _scanlineAnim, _bracketAnim;
 
-  // Real Camera support
+  // Real Camera & Face Detection support
   List<CameraDescription> _cameras = [];
   CameraController? _cameraController;
   bool _cameraInitialized = false;
   int _selectedCameraIndex = 0;
+
+  FaceDetectorService? _faceDetectorService;
+  RPPGSignalProcessor? _rppgProcessor;
+  FaceDetectionData? _faceData;
+  String _liveStatusMessage = "👤 Center your face in frame";
+  bool _isStreamingImage = false;
 
   // AI Advice Ticker list
   final List<String> _advices = [
@@ -61,6 +70,9 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
     _scanlineAnim = Tween<double>(begin: 0.1, end: 0.9).animate(_scanlineCtrl);
     _bracketCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 800))..repeat(reverse: true);
     _bracketAnim = Tween<double>(begin: 0.6, end: 1.0).animate(CurvedAnimation(parent: _bracketCtrl, curve: Curves.easeInOut));
+
+    _faceDetectorService = FaceDetectorService();
+    _rppgProcessor = RPPGSignalProcessor();
     
     // Attempt camera initialization
     _initCamera();
@@ -68,11 +80,13 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
 
   @override
   void dispose() {
+    _stopImageStream();
     _timer?.cancel();
     _simTimer?.cancel();
     _adviceTimer?.cancel();
     _scanlineCtrl.dispose();
     _bracketCtrl.dispose();
+    _faceDetectorService?.dispose();
     _cameraController?.dispose();
     super.dispose();
   }
@@ -118,8 +132,66 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
 
   Future<void> _toggleCamera() async {
     if (_cameras.length < 2) return;
+    _stopImageStream();
     _selectedCameraIndex = (_selectedCameraIndex + 1) % _cameras.length;
     await _setupCameraController(_cameras[_selectedCameraIndex]);
+    if (_state == ScanState.scanning) {
+      _startImageStream();
+    }
+  }
+
+  void _startImageStream() {
+    if (_cameraController != null && _cameraController!.value.isInitialized && !_isStreamingImage) {
+      _isStreamingImage = true;
+      _rppgProcessor?.reset();
+      try {
+        _cameraController!.startImageStream((CameraImage image) async {
+          if (!mounted || _state != ScanState.scanning) return;
+          if (_cameras.isEmpty) return;
+
+          final sensorOrientation = _cameras[_selectedCameraIndex].sensorOrientation;
+          final lensDirection = _cameras[_selectedCameraIndex].lensDirection;
+
+          final detection = await _faceDetectorService?.processCameraImage(
+            image: image,
+            sensorOrientation: sensorOrientation,
+            lensDirection: lensDirection,
+          );
+
+          if (detection != null && mounted) {
+            final rppgResult = _rppgProcessor?.processFrame(
+              image: image,
+              detectionData: detection,
+            );
+
+            setState(() {
+              _faceData = detection;
+              _liveStatusMessage = detection.statusMessage;
+              if (rppgResult != null && rppgResult.isValid && rppgResult.bpm > 0) {
+                _pulseVal = rppgResult.bpm.round().toString();
+                int sys = 110 + (rppgResult.bpm * 0.1).round();
+                int dia = 70 + (rppgResult.bpm * 0.05).round();
+                _bpVal = '$sys / $dia';
+              }
+            });
+          }
+        });
+      } catch (e) {
+        debugPrint("Error starting image stream: $e");
+        _isStreamingImage = false;
+      }
+    }
+  }
+
+  void _stopImageStream() {
+    if (_cameraController != null && _isStreamingImage) {
+      _isStreamingImage = false;
+      try {
+        _cameraController!.stopImageStream();
+      } catch (e) {
+        debugPrint("Error stopping image stream: $e");
+      }
+    }
   }
 
   void _startScan() {
@@ -129,7 +201,10 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
       _pulseVal = '72';
       _bpVal = '115 / 72';
       _adviceIndex = 0;
+      _liveStatusMessage = "👤 Center your face in frame";
     });
+
+    _startImageStream();
 
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       setState(() {
@@ -137,8 +212,9 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
           _timer?.cancel();
           _simTimer?.cancel();
           _adviceTimer?.cancel();
+          _stopImageStream();
           _state = ScanState.completed;
-          _pulseVal = '75';
+          _pulseVal = _rppgProcessor?.currentBpm.round().toString() ?? '75';
           _bpVal = '117 / 74';
           _timeLeft = 0;
         } else {
@@ -148,6 +224,7 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
     });
 
     _simTimer = Timer.periodic(const Duration(milliseconds: 1500), (_) {
+      if (_rppgProcessor != null && _rppgProcessor!.isLocked) return;
       final r = DateTime.now().millisecondsSinceEpoch;
       final p = 70 + (r % 15);
       final s = 112 + (r % 8);
@@ -171,11 +248,13 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
     _timer?.cancel();
     _simTimer?.cancel();
     _adviceTimer?.cancel();
+    _stopImageStream();
     setState(() {
       _state = ScanState.idle;
       _timeLeft = 30;
       _pulseVal = '--';
       _bpVal = '-- / --';
+      _faceData = null;
     });
   }
 
@@ -394,7 +473,22 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
                 ),
         ),
 
-        // Simulated Face Mesh Overlay (only draw fallback if camera is not active)
+        // Real-time Face Mesh & Bounding Box Overlay
+        Positioned.fill(
+          child: AnimatedBuilder(
+            animation: _scanlineCtrl,
+            builder: (context, _) => CustomPaint(
+              painter: FaceOverlayPainter(
+                detectionData: _faceData,
+                scanlineProgress: _scanlineAnim.value,
+                isFrontCamera: _cameras.isNotEmpty &&
+                    _cameras[_selectedCameraIndex].lensDirection == CameraLensDirection.front,
+              ),
+            ),
+          ),
+        ),
+
+        // Simulated Face Mesh Overlay (fallback if camera is not active)
         if (!_cameraInitialized)
           Positioned.fill(
             child: CustomPaint(
@@ -686,8 +780,8 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
               AnimatedSwitcher(
                 duration: const Duration(milliseconds: 300),
                 child: Text(
-                  _advices[_adviceIndex],
-                  key: ValueKey<int>(_adviceIndex),
+                  _faceData != null ? _liveStatusMessage : _advices[_adviceIndex],
+                  key: ValueKey<String>(_faceData != null ? _liveStatusMessage : _advices[_adviceIndex]),
                   style: AppTheme.sansFont(
                     fontSize: 8,
                     fontWeight: FontWeight.bold,
@@ -1238,7 +1332,7 @@ class _CartoonScanPainter extends CustomPainter {
     final laserPaint = Paint()
       ..color = const Color(0xFF2DD4BF)
       ..strokeWidth = 2.0
-      ..shadowColor = const Color(0xFF2DD4BF).withOpacity(0.8);
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.0);
     canvas.drawLine(Offset(w * 0.275, laserY), Offset(w * 0.325, laserY), laserPaint);
 
     // ── 5. FLORA / FOLIAGE (Teal / Red leaves matching reference) ──
