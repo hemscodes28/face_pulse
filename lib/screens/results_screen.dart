@@ -182,14 +182,28 @@ class ResultsScreen extends StatelessWidget {
                     ]),
                   ),
                   const SizedBox(height: 32),
-                  // Action buttons
-                  _GradientButton(label: 'CALCULATE HEALTH INDICES', onTap: onFinish),
-                  const SizedBox(height: 20),
-                  Column(children: [
-                    TextButton(onTap: onFinish, label: 'Finish'),
-                    TextButton(onTap: onMeasureAgain, label: 'Measure Again'),
-                    TextButton(onTap: onFinish, label: 'Show Dashboard'),
-                  ]),
+                  // Primary & Secondary Action Buttons
+                  _GradientButton(label: 'Show Dashboard', onTap: onFinish),
+                  const SizedBox(height: 14),
+                  OutlinedButton(
+                    onPressed: onMeasureAgain,
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      minimumSize: const Size(double.infinity, 50),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(25),
+                      ),
+                      side: const BorderSide(color: Color(0xFF0077CC), width: 1.5),
+                    ),
+                    child: Text(
+                      'Measure Again',
+                      style: GoogleFonts.hankenGrotesk(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF0077CC),
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: 24),
                   Text(
                     'These results are for general wellness and self-awareness purposes only. This product is not a medical device and does not support clinical decisions, diagnosis, or treatment.',
@@ -215,16 +229,33 @@ class _ResultCard extends StatelessWidget {
     padding: const EdgeInsets.all(20),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(children: [
-            Container(width: 32, height: 32, decoration: BoxDecoration(color: iconBg, shape: BoxShape.circle), child: Icon(icon, color: iconColor, size: 16)),
-            const SizedBox(width: 12),
-            Text(title, style: GoogleFonts.hankenGrotesk(fontSize: 15, fontWeight: FontWeight.w700, color: const Color(0xFF1F2937))),
-          ]),
-          if (subtitle.isNotEmpty)
-            SizedBox(width: 140, child: Text(subtitle, textAlign: TextAlign.right, style: GoogleFonts.hankenGrotesk(fontSize: 11, color: const Color(0xFF9CA3AF), height: 1.4))),
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(color: iconBg, shape: BoxShape.circle),
+            child: Icon(icon, color: iconColor, size: 16),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: GoogleFonts.hankenGrotesk(fontSize: 15, fontWeight: FontWeight.w700, color: const Color(0xFF1F2937)),
+                ),
+                if (subtitle.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: GoogleFonts.hankenGrotesk(fontSize: 11, color: const Color(0xFF9CA3AF), height: 1.3),
+                  ),
+                ],
+              ],
+            ),
+          ),
         ],
       ),
       const SizedBox(height: 16),
