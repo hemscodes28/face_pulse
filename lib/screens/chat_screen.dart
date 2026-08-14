@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
 import '../components/innovative_back_button.dart';
+import '../components/wavy_bottom_nav_bar.dart';
 
 class _Message {
   final String id, text, timestamp;
@@ -16,7 +17,22 @@ class ChatScreen extends StatefulWidget {
   final int latestHrv;
   final double latestBmi;
   final String? initialMessage;
-  const ChatScreen({super.key, required this.onBack, this.latestHrv = 48, this.latestBmi = 21.7, this.initialMessage});
+  final VoidCallback onNavigateToHome;
+  final VoidCallback onNavigateToDiary;
+  final VoidCallback onStartScan;
+  final VoidCallback onNavigateToProfile;
+
+  const ChatScreen({
+    super.key,
+    required this.onBack,
+    this.latestHrv = 48,
+    this.latestBmi = 21.7,
+    this.initialMessage,
+    required this.onNavigateToHome,
+    required this.onNavigateToDiary,
+    required this.onStartScan,
+    required this.onNavigateToProfile,
+  });
   @override State<ChatScreen> createState() => _ChatScreenState();
 }
 
@@ -181,7 +197,7 @@ class _ChatScreenState extends State<ChatScreen> {
           // Input bar
           Container(
             color: Colors.white,
-            padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom),
+            padding: EdgeInsets.only(bottom: 84 + MediaQuery.of(context).padding.bottom),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
               child: Row(
@@ -217,6 +233,17 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
         ],
+      ),
+      extendBody: true,
+      bottomNavigationBar: WavyBottomNavBar(
+        currentIndex: 3,
+        onTap: (i) {
+          if (i == 0) widget.onNavigateToHome();
+          if (i == 1) widget.onNavigateToDiary();
+          if (i == 2) widget.onStartScan();
+          if (i == 3) {}
+          if (i == 4) widget.onNavigateToProfile();
+        },
       ),
     );
   }

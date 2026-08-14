@@ -2,11 +2,25 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../components/innovative_back_button.dart';
 import '../theme/app_theme.dart';
+import '../components/wavy_bottom_nav_bar.dart';
 
 class ProfileScreen extends StatefulWidget {
   final VoidCallback onSignOut;
   final VoidCallback onBack;
-  const ProfileScreen({super.key, required this.onSignOut, required this.onBack});
+  final VoidCallback onNavigateToHome;
+  final VoidCallback onNavigateToDiary;
+  final VoidCallback onStartScan;
+  final Function(String? message) onNavigateToChat;
+
+  const ProfileScreen({
+    super.key,
+    required this.onSignOut,
+    required this.onBack,
+    required this.onNavigateToHome,
+    required this.onNavigateToDiary,
+    required this.onStartScan,
+    required this.onNavigateToChat,
+  });
   @override State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
@@ -88,7 +102,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
 
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 40),
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 110),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -185,6 +199,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ),
         ],
+      ),
+      extendBody: true,
+      bottomNavigationBar: WavyBottomNavBar(
+        currentIndex: 4,
+        onTap: (i) {
+          if (i == 0) widget.onNavigateToHome();
+          if (i == 1) widget.onNavigateToDiary();
+          if (i == 2) widget.onStartScan();
+          if (i == 3) widget.onNavigateToChat(null);
+          if (i == 4) {}
+        },
       ),
     );
   }

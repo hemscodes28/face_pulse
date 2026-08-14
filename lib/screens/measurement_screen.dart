@@ -54,6 +54,16 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
   ];
   int _adviceIndex = 0;
 
+  // ECG Live waveform data
+  final List<double> _ecgPoints = [];
+  double _ecgPhase = 0.0;
+  double _currentHeartRate = 70.0;
+  double _targetHeartRate = 70.0;
+  double _baselineWander = 0.0;
+  double _baselineWanderTarget = 0.0;
+  final math.Random _random = math.Random();
+  Timer? _ecgTickTimer;
+
   @override
   void initState() {
     super.initState();
@@ -62,6 +72,15 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
     _bracketCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 800))..repeat(reverse: true);
     _bracketAnim = Tween<double>(begin: 0.6, end: 1.0).animate(CurvedAnimation(parent: _bracketCtrl, curve: Curves.easeInOut));
     
+    // Initialize ECG points
+    for (int i = 0; i < 150; i++) {
+      _ecgPoints.add(0.0);
+    }
+    _ecgTickTimer = Timer.periodic(const Duration(milliseconds: 30), (timer) {
+      if (!mounted) return;
+      _updateEcgData();
+    });
+
     // Attempt camera initialization
     _initCamera();
   }
@@ -71,6 +90,7 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
     _timer?.cancel();
     _simTimer?.cancel();
     _adviceTimer?.cancel();
+    _ecgTickTimer?.cancel();
     _scanlineCtrl.dispose();
     _bracketCtrl.dispose();
     _cameraController?.dispose();
@@ -126,8 +146,10 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
     setState(() {
       _state = ScanState.scanning;
       _timeLeft = 30;
-      _pulseVal = '72';
-      _bpVal = '115 / 72';
+      _currentHeartRate = 60.0 + _random.nextDouble() * 20.0;
+      _targetHeartRate = _currentHeartRate;
+      _pulseVal = _currentHeartRate.round().toString();
+      _bpVal = '${110 + _random.nextInt(12)} / ${70 + _random.nextInt(8)}';
       _adviceIndex = 0;
     });
 
@@ -135,26 +157,13 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
       setState(() {
         if (_timeLeft <= 1) {
           _timer?.cancel();
-          _simTimer?.cancel();
           _adviceTimer?.cancel();
           _state = ScanState.completed;
-          _pulseVal = '75';
-          _bpVal = '117 / 74';
+          _pulseVal = _currentHeartRate.round().toString();
           _timeLeft = 0;
         } else {
           _timeLeft--;
         }
-      });
-    });
-
-    _simTimer = Timer.periodic(const Duration(milliseconds: 1500), (_) {
-      final r = DateTime.now().millisecondsSinceEpoch;
-      final p = 70 + (r % 15);
-      final s = 112 + (r % 8);
-      final d = 72 + (r % 6);
-      setState(() {
-        _pulseVal = '$p';
-        _bpVal = '$s / $d';
       });
     });
 
@@ -169,13 +178,103 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
 
   void _stopScan() {
     _timer?.cancel();
-    _simTimer?.cancel();
     _adviceTimer?.cancel();
     setState(() {
       _state = ScanState.idle;
       _timeLeft = 30;
       _pulseVal = '--';
       _bpVal = '-- / --';
+    });
+  }
+
+  void _updateEcgData() {
+    // 1. Gently drift baseline wander (slow breathing drift upward/downward)
+    if ((_baselineWander - _baselineWanderTarget).abs() < 0.5) {
+      _baselineWanderTarget = (_random.nextDouble() * 10.0) - 5.0; // wander between -5 and +5 pixels
+    } else {
+      _baselineWander += (_baselineWanderTarget - _baselineWander) * 0.02;
+    }
+
+    double finalVal = _baselineWander;
+
+    if (_state == ScanState.scanning) {
+      // 2. Gently drift current heart rate towards target heart rate
+      if ((_currentHeartRate - _targetHeartRate).abs() < 0.5) {
+        // Pick a new random target heart rate between 60 and 80 bpm
+        _targetHeartRate = 60.0 + _random.nextDouble() * 20.0;
+      } else {
+        // Smooth interpolation
+        _currentHeartRate += (_targetHeartRate - _currentHeartRate) * 0.03;
+      }
+
+      // Update real-time pulse value display to match current heart rate
+      _pulseVal = _currentHeartRate.round().toString();
+
+      // Update blood pressure to follow heart rate realistically with slight noise
+      if (_random.nextInt(25) == 0) { // update BP roughly once per second
+        int sys = 110 + (_currentHeartRate * 0.1).round() + _random.nextInt(6);
+        int dia = 70 + (_currentHeartRate * 0.05).round() + _random.nextInt(4);
+        _bpVal = '$sys / $dia';
+      }
+
+      // 3. Increment phase based on the current heart rate
+      double cyclesPerSecond = _currentHeartRate / 60.0;
+      double phaseIncrement = (2 * math.pi * cyclesPerSecond) / 33.33;
+      _ecgPhase += phaseIncrement;
+
+      // 4. Calculate the ECG value for this phase
+      double modPhase = _ecgPhase % (2 * math.pi);
+      double ecgVal = 0.0;
+
+      // Draw realistic ECG components
+      if (modPhase < 0.3) {
+        // P wave
+        double t = modPhase / 0.3;
+        ecgVal = math.sin(t * math.pi) * 3.5;
+      } else if (modPhase >= 0.3 && modPhase < 0.45) {
+        ecgVal = 0.0;
+      } else if (modPhase >= 0.45 && modPhase < 0.70) {
+        // QRS complex
+        double qrsPhase = (modPhase - 0.45) / 0.25;
+        if (qrsPhase < 0.2) {
+          // Q wave
+          double t = qrsPhase / 0.2;
+          ecgVal = -t * 4.0;
+        } else if (qrsPhase >= 0.2 && qrsPhase < 0.7) {
+          // R wave
+          double t = (qrsPhase - 0.2) / 0.5;
+          double maxSpike = 32.0 + (_random.nextDouble() * 12.0); // vary height between 32 and 44
+          ecgVal = -4.0 + t * (maxSpike + 4.0);
+        } else {
+          // S wave
+          double t = (qrsPhase - 0.7) / 0.3;
+          double maxSpike = 32.0;
+          ecgVal = maxSpike - (t * (maxSpike + 6.0));
+        }
+      } else if (modPhase >= 0.70 && modPhase < 0.85) {
+        double t = (modPhase - 0.70) / 0.15;
+        ecgVal = -6.0 + (t * 6.0);
+      } else if (modPhase >= 0.85 && modPhase < 1.3) {
+        // T wave
+        double t = (modPhase - 0.85) / 0.45;
+        ecgVal = math.sin(t * math.pi) * 6.0;
+      } else {
+        ecgVal = 0.0;
+      }
+
+      double noise = (_random.nextDouble() * 1.2) - 0.6;
+      finalVal += ecgVal + noise;
+    } else {
+      // Inactive/flatline mode: no QRS complexes, just subtle noise
+      double noise = (_random.nextDouble() * 0.8) - 0.4;
+      finalVal += noise;
+    }
+
+    setState(() {
+      _ecgPoints.add(finalVal);
+      if (_ecgPoints.length > 150) {
+        _ecgPoints.removeAt(0);
+      }
     });
   }
 
@@ -242,9 +341,9 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
               ),
             ),
 
-            // 2. Top area: Flex 13 Height
+            // 2. Top area: Flex 3 Height (3/4 of the page)
             Expanded(
-              flex: 13,
+              flex: 3,
               child: Stack(
                 alignment: Alignment.center,
                 children: [
@@ -316,9 +415,9 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
               ),
             ),
 
-            // 3. Bottom area: Flex 7 Height
+            // 3. Bottom area: Flex 1 Height (1/4 of the page)
             Expanded(
-              flex: 7,
+              flex: 1,
               child: Container(
                 color: Colors.white,
                 padding: const EdgeInsets.all(12),
@@ -486,66 +585,85 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
     return AnimatedBuilder(
       animation: _scanlineCtrl,
       builder: (context, child) {
-        return Stack(
-          alignment: Alignment.center,
-          children: [
-            // Animated Custom Cartoon Illustration representing biometric face scanning
-            Positioned.fill(
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 84, top: 12),
-                child: CustomPaint(
-                  painter: _CartoonScanPainter(animationValue: _scanlineCtrl.value),
+        return Container(
+          margin: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: const Color(0xFFE2E8F0), // clean sleek border
+              width: 2.0,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.06),
+                blurRadius: 16,
+                spreadRadius: 2,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              // Animated Custom Cartoon Illustration representing biometric face scanning
+              Positioned.fill(
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 90, top: 16, left: 16, right: 16),
+                  child: CustomPaint(
+                    painter: _CartoonScanPainter(animationValue: _scanlineCtrl.value),
+                  ),
                 ),
               ),
-            ),
 
-            // Floating glowing START SCAN button at the bottom
-            Positioned(
-              bottom: 24,
-              child: GestureDetector(
-                onTap: _startScan,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 15),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(30),
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF2DD4BF), Color(0xFF0EA5E9)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF2DD4BF).withOpacity(0.4),
-                        blurRadius: 16,
-                        spreadRadius: 2,
-                        offset: const Offset(0, 4),
+              // Floating glowing START SCAN button at the bottom
+              Positioned(
+                bottom: 24,
+                child: GestureDetector(
+                  onTap: _startScan,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 16),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(30),
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF2DD4BF), Color(0xFF0EA5E9)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
                       ),
-                    ],
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.play_arrow_rounded,
-                        color: Colors.white,
-                        size: 24,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'START SCAN',
-                        style: AppTheme.sansFont(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                          letterSpacing: 1.0,
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF2DD4BF).withOpacity(0.35),
+                          blurRadius: 14,
+                          spreadRadius: 1,
+                          offset: const Offset(0, 4),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.play_arrow_rounded,
+                          color: Colors.white,
+                          size: 24,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'START SCAN',
+                          style: AppTheme.sansFont(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                            letterSpacing: 1.0,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         );
       },
     );
@@ -643,19 +761,15 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
                 child: Container(
                   margin: const EdgeInsets.symmetric(vertical: 4),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF0F172A),
+                    color: Colors.white,
                     borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(8),
-                    child: AnimatedBuilder(
-                      animation: _scanlineCtrl,
-                      builder: (context, child) {
-                        return CustomPaint(
-                          painter: _EcgPainter(_scanlineCtrl.value),
-                          child: Container(),
-                        );
-                      },
+                    child: CustomPaint(
+                      painter: _EcgPainter(List<double>.from(_ecgPoints)),
+                      child: Container(),
                     ),
                   ),
                 ),
@@ -968,44 +1082,44 @@ class _FaceMeshPainter extends CustomPainter {
 }
 
 class _EcgPainter extends CustomPainter {
-  final double animationValue;
-  _EcgPainter(this.animationValue);
+  final List<double> points;
+  _EcgPainter(this.points);
 
   @override
   void paint(Canvas canvas, Size size) {
+    final h = size.height;
+    final w = size.width;
+
+    // 1. Draw light grid lines
+    final gridPaint = Paint()
+      ..color = const Color(0xFFF1F5F9)
+      ..strokeWidth = 1.0
+      ..style = PaintingStyle.stroke;
+
+    double gridSpacing = 16.0;
+    for (double x = 0; x < w; x += gridSpacing) {
+      canvas.drawLine(Offset(x, 0), Offset(x, h), gridPaint);
+    }
+    for (double y = 0; y < h; y += gridSpacing) {
+      canvas.drawLine(Offset(0, y), Offset(w, y), gridPaint);
+    }
+
+    // 2. Draw dark ECG wave line
     final paint = Paint()
-      ..color = const Color(0xFF22D3EE)
+      ..color = const Color(0xFF0F172A)
       ..strokeWidth = 2.0
       ..style = PaintingStyle.stroke;
 
     final path = Path();
-    final h = size.height;
-    final w = size.width;
+    if (points.isEmpty) return;
+
+    double stepX = w / 150.0;
     
-    path.moveTo(0, h / 2);
-    
-    // Draw ECG waves points using dynamic formula
-    for (double x = 0; x < w; x++) {
-      double phase = (x / w) * 2 * math.pi * 3.5 - (animationValue * 2 * math.pi * 2.0);
-      double y = h / 2;
-      double norm = phase % (2 * math.pi);
-      
-      // QRS Complex spike
-      if (norm > 1.2 && norm < 1.6) {
-        double t = (norm - 1.2) / 0.4;
-        y = h / 2 - math.sin(t * math.pi * 2) * (h * 0.38);
-      }
-      // T Wave
-      else if (norm > 2.0 && norm < 2.6) {
-        double t = (norm - 2.0) / 0.6;
-        y = h / 2 - math.sin(t * math.pi) * (h * 0.14);
-      }
-      // P Wave
-      else if (norm > 0.5 && norm < 0.9) {
-        double t = (norm - 0.5) / 0.4;
-        y = h / 2 - math.sin(t * math.pi) * (h * 0.08);
-      }
-      
+    path.moveTo(0, h / 2 - points[0]);
+    for (int i = 1; i < points.length; i++) {
+      double x = i * stepX;
+      double y = h / 2 - points[i];
+      y = y.clamp(4.0, h - 4.0);
       path.lineTo(x, y);
     }
     canvas.drawPath(path, paint);
@@ -1026,14 +1140,14 @@ class _CartoonScanPainter extends CustomPainter {
 
     // Define colors matching the reference photo
     final outlinePaint = Paint()
-      ..color = const Color(0xFFF1F5F9) // Light off-white stroke for dark theme
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
-
-    final darkOutlinePaint = Paint()
       ..color = const Color(0xFF0F172A)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.0;
+
+    final thinOutlinePaint = Paint()
+      ..color = const Color(0xFF0F172A)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2;
 
     final redPaint = Paint()
       ..color = const Color(0xFFEF4444)
@@ -1056,172 +1170,141 @@ class _CartoonScanPainter extends CustomPainter {
       ..style = PaintingStyle.fill;
 
     // Breathing offset for cartoon body
-    final breathe = math.sin(animationValue * 2 * math.pi) * 1.5;
+    final breathe = math.sin(animationValue * 2 * math.pi) * 2.0;
 
-    // ── 1. BACKGROUND DECORATIVE SHAPES ──
-    // Draw decorative dark circle
-    canvas.drawCircle(Offset(w * 0.72, h * 0.58), 24, darkPaint);
-    canvas.drawCircle(Offset(w * 0.72, h * 0.58), 24, outlinePaint);
+    // ── 1. BACKGROUND DECORATIVE PANEL ──
+    // Dashboard screen panel outline in background
+    final dbRect = Rect.fromLTWH(w * 0.12, h * 0.12, w * 0.76, h * 0.66);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(dbRect, const Radius.circular(16)),
+      Paint()..color = const Color(0xFFF8FAFC)..style = PaintingStyle.fill,
+    );
+    canvas.drawRRect(RRect.fromRectAndRadius(dbRect, const Radius.circular(16)), outlinePaint);
 
-    final circleOutline = Paint()
-      ..color = Colors.white.withOpacity(0.08)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
-    canvas.drawCircle(Offset(w * 0.22, h * 0.56), 8, circleOutline);
+    // Decorative circle in background
+    canvas.drawCircle(Offset(w * 0.8, h * 0.65), 18, darkPaint);
+    canvas.drawCircle(Offset(w * 0.8, h * 0.65), 18, outlinePaint);
 
-    // ── 2. BACKGROUND DASHBOARD SCREEN ──
-    final dbRect = Rect.fromLTWH(w * 0.32, h * 0.16, w * 0.56, h * 0.44);
-    final dbPaint = Paint()
-      ..color = Colors.white.withOpacity(0.03)
-      ..style = PaintingStyle.fill;
-    canvas.drawRRect(RRect.fromRectAndRadius(dbRect, const Radius.circular(12)), dbPaint);
-    
-    // Dashboard border
-    canvas.drawRRect(RRect.fromRectAndRadius(dbRect, const Radius.circular(12)), outlinePaint);
-
-    // Dotted vertical line inside dashboard
-    final dottedPaint = Paint()
-      ..color = Colors.white.withOpacity(0.08)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.0;
-    double startY = h * 0.16;
-    double endY = h * 0.6;
-    double dashWidth = 4.0;
-    double dashSpace = 4.0;
-    while (startY < endY) {
-      canvas.drawLine(Offset(w * 0.72, startY), Offset(w * 0.72, startY + dashWidth), dottedPaint);
-      startY += dashWidth + dashSpace;
-    }
-
-    // Draw little UI lines on the dashboard
-    final uiLinePaint = Paint()
-      ..color = Colors.white.withOpacity(0.15)
-      ..strokeWidth = 4.0
-      ..strokeCap = StrokeCap.round;
-    canvas.drawLine(Offset(w * 0.76, h * 0.24), Offset(w * 0.84, h * 0.24), uiLinePaint);
-    canvas.drawLine(Offset(w * 0.76, h * 0.29), Offset(w * 0.84, h * 0.29), uiLinePaint);
-    canvas.drawLine(Offset(w * 0.76, h * 0.34), Offset(w * 0.84, h * 0.34), uiLinePaint);
-
-    // Draw a heartbeat line on the dashboard (Red)
-    final heartPath = Path();
-    heartPath.moveTo(w * 0.36, h * 0.45);
-    heartPath.lineTo(w * 0.41, h * 0.45);
-    heartPath.lineTo(w * 0.43, h * 0.38);
-    heartPath.lineTo(w * 0.45, h * 0.52);
-    heartPath.lineTo(w * 0.47, h * 0.45);
-    heartPath.lineTo(w * 0.54, h * 0.45);
-    final heartLinePaint = Paint()
-      ..color = const Color(0xFFEF4444)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0;
-    canvas.drawPath(heartPath, heartLinePaint);
-
-    // Badge ribbon (Red medal) on dashboard
-    final badgePath = Path();
-    badgePath.moveTo(w * 0.40, h * 0.24);
-    badgePath.lineTo(w * 0.42, h * 0.32);
-    badgePath.lineTo(w * 0.40, h * 0.30);
-    badgePath.lineTo(w * 0.38, h * 0.32);
-    badgePath.close();
-    canvas.drawPath(badgePath, redPaint);
-    canvas.drawPath(badgePath, darkOutlinePaint);
-    
-    final badgeCirclePaint = Paint()
-      ..color = const Color(0xFFEF4444)
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(Offset(w * 0.40, h * 0.22), 8, badgeCirclePaint);
-    canvas.drawCircle(Offset(w * 0.40, h * 0.22), 8, darkOutlinePaint);
-
-    // ── 3. CHARACTER DRAWINGS (Flat vector outline style) ──
-    // Left Leg
-    final leftLeg = Path()
-      ..moveTo(w * 0.25, h * 0.58)
-      ..lineTo(w * 0.20, h * 0.78)
-      ..lineTo(w * 0.23, h * 0.78)
-      ..lineTo(w * 0.28, h * 0.58)
-      ..close();
-    canvas.drawPath(leftLeg, whitePaint);
-    canvas.drawPath(leftLeg, darkOutlinePaint);
-
-    // Right Leg
-    final rightLeg = Path()
-      ..moveTo(w * 0.29, h * 0.58)
-      ..lineTo(w * 0.31, h * 0.78)
-      ..lineTo(w * 0.34, h * 0.78)
-      ..lineTo(w * 0.32, h * 0.58)
-      ..close();
-    canvas.drawPath(rightLeg, whitePaint);
-    canvas.drawPath(rightLeg, darkOutlinePaint);
-
-    // Left Shoe
-    final leftShoe = Path()
-      ..moveTo(w * 0.20, h * 0.78)
-      ..quadraticBezierTo(w * 0.16, h * 0.79, w * 0.17, h * 0.81)
-      ..lineTo(w * 0.23, h * 0.81)
-      ..close();
-    canvas.drawPath(leftShoe, darkPaint);
-    canvas.drawPath(leftShoe, darkOutlinePaint);
-
-    // Right Shoe
-    final rightShoe = Path()
-      ..moveTo(w * 0.31, h * 0.78)
-      ..quadraticBezierTo(w * 0.35, h * 0.79, w * 0.34, h * 0.81)
-      ..lineTo(w * 0.30, h * 0.81)
-      ..close();
-    canvas.drawPath(rightShoe, darkPaint);
-    canvas.drawPath(rightShoe, darkOutlinePaint);
-
-    // Torso (Shirt) with breathing breathe offset
+    // ── 2. LARGE CHARACTER BUST (Highly Visible Face & Chest) ──
+    // Torso / Shoulders (Shirt)
     final torsoPath = Path()
-      ..moveTo(w * 0.24, h * 0.40 + breathe)
-      ..lineTo(w * 0.32, h * 0.40 + breathe)
-      ..lineTo(w * 0.32, h * 0.58)
-      ..lineTo(w * 0.24, h * 0.58)
+      ..moveTo(w * 0.08, h * 0.78)
+      ..quadraticBezierTo(w * 0.18, h * 0.58 + breathe, w * 0.28, h * 0.58 + breathe) // Left Shoulder
+      ..lineTo(w * 0.36, h * 0.58 + breathe) // Chest
+      ..quadraticBezierTo(w * 0.44, h * 0.64 + breathe, w * 0.48, h * 0.78) // Right Shoulder
       ..close();
     canvas.drawPath(torsoPath, redPaint);
-    canvas.drawPath(torsoPath, darkOutlinePaint);
+    canvas.drawPath(torsoPath, outlinePaint);
 
     // Neck
-    canvas.drawRect(Rect.fromLTWH(w * 0.27, h * 0.36 + breathe, w * 0.02, h * 0.04), skinPaint);
-    canvas.drawRect(Rect.fromLTWH(w * 0.27, h * 0.36 + breathe, w * 0.02, h * 0.04), darkOutlinePaint);
+    final neckRect = Rect.fromLTWH(w * 0.27, h * 0.48 + breathe, w * 0.06, h * 0.12);
+    canvas.drawRect(neckRect, skinPaint);
+    canvas.drawRect(neckRect, outlinePaint);
 
-    // Head (Oval)
-    canvas.drawOval(Rect.fromLTWH(w * 0.26, h * 0.28 + breathe, w * 0.045, h * 0.08), skinPaint);
-    canvas.drawOval(Rect.fromLTWH(w * 0.26, h * 0.28 + breathe, w * 0.045, h * 0.08), darkOutlinePaint);
+    // Face Profile (Head Oval) - Scaled up for clarity
+    final headRect = Rect.fromLTWH(w * 0.20, h * 0.24 + breathe, w * 0.20, h * 0.26);
+    canvas.drawOval(headRect, skinPaint);
+    canvas.drawOval(headRect, outlinePaint);
 
-    // Curly Hair (overlapped circles just like the reference photo)
+    // Curly Hair - Overlapping premium curls
     final hairPaint = Paint()..color = const Color(0xFF0F172A);
-    canvas.drawCircle(Offset(w * 0.28, h * 0.275 + breathe), 11, hairPaint);
-    canvas.drawCircle(Offset(w * 0.265, h * 0.29 + breathe), 9, hairPaint);
-    canvas.drawCircle(Offset(w * 0.288, h * 0.268 + breathe), 10, hairPaint);
-    canvas.drawCircle(Offset(w * 0.27, h * 0.26 + breathe), 9, hairPaint);
+    canvas.drawCircle(Offset(w * 0.28, h * 0.24 + breathe), 30, hairPaint);
+    canvas.drawCircle(Offset(w * 0.21, h * 0.28 + breathe), 26, hairPaint);
+    canvas.drawCircle(Offset(w * 0.30, h * 0.20 + breathe), 28, hairPaint);
+    canvas.drawCircle(Offset(w * 0.23, h * 0.22 + breathe), 26, hairPaint);
+    canvas.drawCircle(Offset(w * 0.34, h * 0.26 + breathe), 22, hairPaint);
 
-    // Arm (Raised, holding smartphone)
+    // Nose Profile (Pointing Right)
+    final nosePath = Path()
+      ..moveTo(w * 0.39, h * 0.35 + breathe)
+      ..lineTo(w * 0.42, h * 0.37 + breathe) // Nose bridge out
+      ..lineTo(w * 0.39, h * 0.39 + breathe) // Nose bottom in
+      ..close();
+    canvas.drawPath(nosePath, skinPaint);
+    canvas.drawPath(nosePath, outlinePaint);
+
+    // Closed Blinking Eye (Curve outline)
+    final eyePaint = Paint()
+      ..color = const Color(0xFF0F172A)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.5
+      ..strokeCap = StrokeCap.round;
+    canvas.drawArc(
+      Rect.fromLTWH(w * 0.31, h * 0.32 + breathe, 16, 10),
+      0,
+      math.pi,
+      false,
+      eyePaint,
+    );
+
+    // Smiling Mouth
+    canvas.drawArc(
+      Rect.fromLTWH(w * 0.32, h * 0.40 + breathe, 14, 8),
+      0,
+      math.pi,
+      false,
+      eyePaint,
+    );
+
+    // Ear
+    final earPath = Path()
+      ..addArc(Rect.fromLTWH(w * 0.18, h * 0.34 + breathe, 14, 20), math.pi / 2, math.pi);
+    canvas.drawPath(earPath, skinPaint);
+    canvas.drawPath(earPath, thinOutlinePaint);
+
+    // ── 3. HAND HOLDING LARGE SMARTPHONE (Highly Visible Scanner) ──
+    // Hand Wrist / Arm holding phone from bottom right
     final armPath = Path()
-      ..moveTo(w * 0.31, h * 0.42 + breathe)
-      ..quadraticBezierTo(w * 0.40, h * 0.42 + breathe, w * 0.42, h * 0.38 + breathe) // Shoulder to hand
-      ..lineTo(w * 0.41, h * 0.36 + breathe)
-      ..quadraticBezierTo(w * 0.39, h * 0.40 + breathe, w * 0.31, h * 0.40 + breathe)
+      ..moveTo(w * 0.58, h * 0.56 + breathe)
+      ..lineTo(w * 0.65, h * 0.78)
+      ..lineTo(w * 0.74, h * 0.78)
+      ..lineTo(w * 0.63, h * 0.56 + breathe)
       ..close();
     canvas.drawPath(armPath, skinPaint);
-    canvas.drawPath(armPath, darkOutlinePaint);
+    canvas.drawPath(armPath, outlinePaint);
 
-    // Smartphone
-    final phoneRect = Rect.fromLTWH(w * 0.42, h * 0.34 + breathe, w * 0.02, h * 0.06);
-    final phoneRRect = RRect.fromRectAndRadius(phoneRect, const Radius.circular(3));
-    canvas.drawRRect(phoneRRect, tealPaint);
-    canvas.drawRRect(phoneRRect, darkOutlinePaint);
+    // Smartphone Chassis (Scaled up for user visibility)
+    final phoneRect = Rect.fromLTWH(w * 0.52, h * 0.34 + breathe, w * 0.10, h * 0.22);
+    final phoneRRect = RRect.fromRectAndRadius(phoneRect, const Radius.circular(8));
+    canvas.drawRRect(phoneRRect, darkPaint);
+    canvas.drawRRect(phoneRRect, outlinePaint);
 
-    // ── 4. ANIMATED SCANNING CONE & LASER ──
+    // Smartphone Screen (Cyan scanning surface)
+    final screenRect = Rect.fromLTWH(w * 0.53, h * 0.35 + breathe, w * 0.08, h * 0.20);
+    canvas.drawRect(screenRect, Paint()..color = const Color(0x302DD4BF)..style = PaintingStyle.fill);
+    
+    // Heart Icon drawn on Phone Screen (Biometrics indication)
+    final screenHeart = Path();
+    double shx = w * 0.57;
+    double shy = h * 0.45 + breathe;
+    screenHeart.moveTo(shx, shy + 4);
+    screenHeart.cubicTo(shx - 6, shy - 4, shx - 10, shy + 2, shx, shy + 12);
+    screenHeart.cubicTo(shx + 10, shy + 2, shx + 6, shy - 4, shx, shy + 4);
+    canvas.drawPath(screenHeart, Paint()..color = const Color(0xFFEF4444)..style = PaintingStyle.fill);
+
+    // Hand Fingers wrapped around phone chassis
+    final fingerPaint = Paint()..color = const Color(0xFFFEE2E2);
+    for (int i = 0; i < 3; i++) {
+      double fy = h * 0.39 + breathe + (i * 20);
+      final fingerRect = Rect.fromLTWH(w * 0.49, fy, w * 0.035, h * 0.035);
+      canvas.drawRRect(RRect.fromRectAndRadius(fingerRect, const Radius.circular(3)), fingerPaint);
+      canvas.drawRRect(RRect.fromRectAndRadius(fingerRect, const Radius.circular(3)), outlinePaint);
+    }
+    // Thumb wrapping right side
+    final thumbRect = Rect.fromLTWH(w * 0.615, h * 0.42 + breathe, w * 0.02, h * 0.035);
+    canvas.drawRRect(RRect.fromRectAndRadius(thumbRect, const Radius.circular(3)), fingerPaint);
+    canvas.drawRRect(RRect.fromRectAndRadius(thumbRect, const Radius.circular(3)), outlinePaint);
+
+    // ── 4. ANIMATED SCANNING CONE & LASER (Phone -> Face) ──
     final scanCone = Path()
-      ..moveTo(w * 0.43, h * 0.37 + breathe) // Vertex from phone screen
-      ..lineTo(w * 0.28, h * 0.25 + breathe) // Upper bound to head
-      ..lineTo(w * 0.28, h * 0.42 + breathe) // Lower bound to chest
+      ..moveTo(w * 0.52, h * 0.45 + breathe) // Vertex at phone screen
+      ..lineTo(w * 0.37, h * 0.25 + breathe) // Upper bound covering head
+      ..lineTo(w * 0.37, h * 0.49 + breathe) // Lower bound covering lower face
       ..close();
     
     final coneGradient = LinearGradient(
       colors: [
-        const Color(0xFF2DD4BF).withOpacity(0.20),
+        const Color(0xFF2DD4BF).withOpacity(0.25),
         const Color(0xFF2DD4BF).withOpacity(0.01),
       ],
       begin: Alignment.centerRight,
@@ -1229,63 +1312,88 @@ class _CartoonScanPainter extends CustomPainter {
     );
 
     final conePaint = Paint()
-      ..shader = coneGradient.createShader(Rect.fromLTWH(w * 0.28, h * 0.25 + breathe, w * 0.15, h * 0.17))
+      ..shader = coneGradient.createShader(Rect.fromLTWH(w * 0.37, h * 0.25 + breathe, w * 0.15, h * 0.24))
       ..style = PaintingStyle.fill;
     canvas.drawPath(scanCone, conePaint);
 
     // Horizontal scanning laser line moving up and down the face
-    double laserY = h * 0.28 + breathe + (h * 0.12 * animationValue);
+    double laserY = h * 0.26 + breathe + (h * 0.22 * animationValue);
     final laserPaint = Paint()
       ..color = const Color(0xFF2DD4BF)
-      ..strokeWidth = 2.0
-      ..shadowColor = const Color(0xFF2DD4BF).withOpacity(0.8);
-    canvas.drawLine(Offset(w * 0.275, laserY), Offset(w * 0.325, laserY), laserPaint);
+      ..strokeWidth = 2.5;
+    canvas.drawLine(Offset(w * 0.35, laserY), Offset(w * 0.40, laserY), laserPaint);
 
-    // ── 5. FLORA / FOLIAGE (Teal / Red leaves matching reference) ──
-    // Bottom Left Leaves
+    // ── 5. FLOATING SCAN DIAGNOSTIC REPORT (Enlarged Clipboard) ──
+    final reportRect = Rect.fromLTWH(w * 0.66, h * 0.18 + (breathe * 1.2), w * 0.18, h * 0.24);
+    final reportRRect = RRect.fromRectAndRadius(reportRect, const Radius.circular(8));
+    
+    // Draw report paper
+    canvas.drawRRect(reportRRect, Paint()..color = const Color(0xFFFEFEE2)..style = PaintingStyle.fill);
+    canvas.drawRRect(reportRRect, outlinePaint);
+
+    // Clipboard clip (Red)
+    final clipRect = Rect.fromLTWH(w * 0.72, h * 0.15 + (breathe * 1.2), w * 0.06, h * 0.045);
+    canvas.drawRRect(RRect.fromRectAndRadius(clipRect, const Radius.circular(2)), redPaint);
+    canvas.drawRRect(RRect.fromRectAndRadius(clipRect, const Radius.circular(2)), outlinePaint);
+
+    // ECG wave drawing inside report
+    final reportWave = Path();
+    reportWave.moveTo(w * 0.69, h * 0.28 + (breathe * 1.2));
+    reportWave.lineTo(w * 0.72, h * 0.28 + (breathe * 1.2));
+    reportWave.lineTo(w * 0.73, h * 0.24 + (breathe * 1.2));
+    reportWave.lineTo(w * 0.75, h * 0.32 + (breathe * 1.2));
+    reportWave.lineTo(w * 0.76, h * 0.28 + (breathe * 1.2));
+    reportWave.lineTo(w * 0.81, h * 0.28 + (breathe * 1.2));
+    canvas.drawPath(reportWave, Paint()..color = const Color(0xFFEF4444)..style = PaintingStyle.stroke..strokeWidth = 1.5);
+
+    // Lines of text on report sheet
+    final textPaint = Paint()
+      ..color = const Color(0xFF0F172A).withOpacity(0.5)
+      ..strokeWidth = 2.0
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(Offset(w * 0.69, h * 0.34 + (breathe * 1.2)), Offset(w * 0.81, h * 0.34 + (breathe * 1.2)), textPaint);
+    canvas.drawLine(Offset(w * 0.69, h * 0.37 + (breathe * 1.2)), Offset(w * 0.78, h * 0.37 + (breathe * 1.2)), textPaint);
+
+    // Mini green checkmark
+    final checkPaint = Paint()
+      ..color = const Color(0xFF22C55E)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.5
+      ..strokeCap = StrokeCap.round;
+    final checkPath = Path();
+    checkPath.moveTo(w * 0.73, h * 0.40 + (breathe * 1.2));
+    checkPath.lineTo(w * 0.75, h * 0.42 + (breathe * 1.2));
+    checkPath.lineTo(w * 0.79, h * 0.38 + (breathe * 1.2));
+    canvas.drawPath(checkPath, checkPaint);
+
+    // ── 6. FLORA / FOLIAGE (Red leaves matching reference) ──
+    // Bottom Left Plant
     final leafPaint1 = Paint()..color = const Color(0xFFEF4444);
     final leafPaint2 = Paint()..color = const Color(0xFFEF4444).withOpacity(0.7);
 
-    // Draw Left Plant
     final leaf1 = Path()
-      ..moveTo(w * 0.08, h * 0.8)
-      ..quadraticBezierTo(w * 0.05, h * 0.68, w * 0.11, h * 0.68)
-      ..quadraticBezierTo(w * 0.14, h * 0.74, w * 0.11, h * 0.8)
+      ..moveTo(w * 0.08, h * 0.78)
+      ..quadraticBezierTo(w * 0.04, h * 0.62, w * 0.12, h * 0.62)
+      ..quadraticBezierTo(w * 0.16, h * 0.70, w * 0.12, h * 0.78)
       ..close();
     canvas.drawPath(leaf1, leafPaint1);
-    canvas.drawPath(leaf1, darkOutlinePaint);
+    canvas.drawPath(leaf1, outlinePaint);
 
-    final leaf2 = Path()
-      ..moveTo(w * 0.11, h * 0.8)
-      ..quadraticBezierTo(w * 0.15, h * 0.70, w * 0.18, h * 0.73)
-      ..quadraticBezierTo(w * 0.16, h * 0.78, w * 0.13, h * 0.8)
-      ..close();
-    canvas.drawPath(leaf2, leafPaint2);
-    canvas.drawPath(leaf2, darkOutlinePaint);
-
-    // Bottom Right Plants (Red foliage like in the reference)
+    // Bottom Right Plant
     final rLeaf1 = Path()
-      ..moveTo(w * 0.84, h * 0.8)
-      ..quadraticBezierTo(w * 0.81, h * 0.62, w * 0.87, h * 0.60)
-      ..quadraticBezierTo(w * 0.90, h * 0.70, w * 0.87, h * 0.8)
+      ..moveTo(w * 0.84, h * 0.78)
+      ..quadraticBezierTo(w * 0.80, h * 0.58, w * 0.88, h * 0.58)
+      ..quadraticBezierTo(w * 0.92, h * 0.68, w * 0.88, h * 0.78)
       ..close();
     canvas.drawPath(rLeaf1, leafPaint1);
-    canvas.drawPath(rLeaf1, darkOutlinePaint);
+    canvas.drawPath(rLeaf1, outlinePaint);
 
-    final rLeaf2 = Path()
-      ..moveTo(w * 0.88, h * 0.8)
-      ..quadraticBezierTo(w * 0.94, h * 0.66, w * 0.91, h * 0.64)
-      ..quadraticBezierTo(w * 0.88, h * 0.74, w * 0.88, h * 0.8)
-      ..close();
-    canvas.drawPath(rLeaf2, leafPaint2);
-    canvas.drawPath(rLeaf2, darkOutlinePaint);
-
-    // Faint circular ground base
+    // Ground platform base
     final groundPaint = Paint()
-      ..color = const Color(0xFFF1F5F9).withOpacity(0.05)
+      ..color = const Color(0xFF0F172A).withOpacity(0.04)
       ..style = PaintingStyle.fill;
-    canvas.drawOval(Rect.fromLTWH(w * 0.08, h * 0.78, w * 0.84, h * 0.04), groundPaint);
-    canvas.drawOval(Rect.fromLTWH(w * 0.08, h * 0.78, w * 0.84, h * 0.04), outlinePaint);
+    canvas.drawOval(Rect.fromLTWH(w * 0.06, h * 0.76, w * 0.88, h * 0.04), groundPaint);
+    canvas.drawOval(Rect.fromLTWH(w * 0.06, h * 0.76, w * 0.88, h * 0.04), outlinePaint);
   }
 
   @override

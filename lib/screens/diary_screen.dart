@@ -1,111 +1,502 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../components/innovative_back_button.dart';
+import '../theme/app_theme.dart';
+import 'measurement_screen.dart'; // To access MeasurementMetrics
+import '../components/wavy_bottom_nav_bar.dart';
 
 class DiaryScreen extends StatefulWidget {
   final VoidCallback onBack;
-  const DiaryScreen({super.key, required this.onBack});
-  @override State<DiaryScreen> createState() => _DiaryScreenState();
+  final List<MeasurementMetrics> scanHistory;
+  final VoidCallback onNavigateToHome;
+  final VoidCallback onStartScan;
+  final Function(String? message) onNavigateToChat;
+  final VoidCallback onNavigateToProfile;
+
+  const DiaryScreen({
+    super.key,
+    required this.onBack,
+    required this.scanHistory,
+    required this.onNavigateToHome,
+    required this.onStartScan,
+    required this.onNavigateToChat,
+    required this.onNavigateToProfile,
+  });
+
+  @override
+  State<DiaryScreen> createState() => _DiaryScreenState();
 }
 
 class _DiaryScreenState extends State<DiaryScreen> {
-  int _selectedDay = 12;
+  String _timePeriod = 'Week'; // 'Week' or 'Month'
 
-  final Map<int, Map<String, dynamic>> _data = {
-    8: {'dateStr': '8/8/2026 13:03', 'pulse': 71, 'hrv': 52, 'breath': 21, 'sys': 114, 'dia': 70},
-    12: {'dateStr': '12/8/2026 09:41', 'pulse': 75, 'hrv': 48, 'breath': 24, 'sys': 117, 'dia': 74},
-    14: {'dateStr': '14/8/2026 10:15', 'pulse': 78, 'hrv': 45, 'breath': 22, 'sys': 120, 'dia': 76},
-  };
+  late DateTime _currentCalendarMonth;
 
-  Map<String, dynamic> get _active => _data[_selectedDay] ?? {'dateStr': '$_selectedDay/8/2026 08:30', 'pulse': 72, 'hrv': 50, 'breath': 18, 'sys': 115, 'dia': 72};
+  @override
+  void initState() {
+    super.initState();
+    final now = DateTime.now();
+    _currentCalendarMonth = DateTime(now.year, now.month, 1);
+  }
+
+  // Get month abbreviation name
+  String _getMonthAbbr(int month) {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    if (month >= 1 && month <= 12) {
+      return months[month - 1];
+    }
+    return 'Aug';
+  }
+
+  String _formatDate() {
+    final now = DateTime.now();
+    const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    
+    final weekday = weekdays[now.weekday % 7];
+    final month = months[now.month - 1];
+    return '$weekday, $month ${now.day}';
+  }
+
+  // Check if a specific date has any scans in history
+  bool _hasScanDataForDate(int year, int month, int day) {
+    final now = DateTime.now();
+    for (int i = 0; i < widget.scanHistory.length; i++) {
+      DateTime dt;
+      if (i == 0) {
+        dt = DateTime(now.year, now.month, (now.day - 6).clamp(1, 28));
+      } else if (i == 1) {
+        dt = DateTime(now.year, now.month, (now.day - 2).clamp(1, 28));
+      } else if (i == 2) {
+        dt = DateTime(now.year, now.month, now.day);
+      } else {
+        // Any new user-completed scans default to today's date
+        dt = DateTime.now();
+      }
+      if (dt.year == year && dt.month == month && dt.day == day) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // Retrieve the latest scanning output metrics
+  MeasurementMetrics get _latestScan {
+    if (widget.scanHistory.isNotEmpty) {
+      return widget.scanHistory.last;
+    }
+    return const MeasurementMetrics(
+      pulse: 75, sys: 117, dia: 74, hrv: 48,
+      breath: 22, stress: 2.0, workload: 145, para: 32, bmi: 21.7,
+    );
+  }
+
+  // Retrieve the trend history data list
+  List<double> _getTrendValues(String metric, String period) {
+    int count = period == 'Week' ? 7 : 30;
+    List<double> vals = [];
+    
+    // Seed a random generator with selection params to remain consistent per month/year
+    final rand = math.Random(DateTime.now().month + DateTime.now().year + metric.hashCode);
+    
+    // Add real values from history
+    for (final scan in widget.scanHistory) {
+      if (metric == 'sys') vals.add(scan.sys.toDouble());
+      else if (metric == 'dia') vals.add(scan.dia.toDouble());
+      else if (metric == 'pulse') vals.add(scan.pulse.toDouble());
+      else if (metric == 'breath') vals.add(scan.breath.toDouble());
+      else if (metric == 'spo2') vals.add(96.0 + (scan.pulse % 5));
+    }
+    
+    // Pad remaining items with realistic random values
+    while (vals.length < count) {
+      if (metric == 'sys') {
+        vals.insert(0, 110.0 + rand.nextInt(15));
+      } else if (metric == 'dia') {
+        vals.insert(0, 68.0 + rand.nextInt(10));
+      } else if (metric == 'pulse') {
+        vals.insert(0, 64.0 + rand.nextInt(16));
+      } else if (metric == 'breath') {
+        vals.insert(0, 16.0 + rand.nextInt(8));
+      } else { // spo2
+        vals.insert(0, 96.0 + rand.nextInt(5));
+      }
+    }
+    
+    if (vals.length > count) {
+      vals = vals.sublist(vals.length - count);
+    }
+    
+    return vals;
+  }
+
+  void _prevMonth() {
+    setState(() {
+      _currentCalendarMonth = DateTime(_currentCalendarMonth.year, _currentCalendarMonth.month - 1, 1);
+    });
+  }
+
+  void _nextMonth() {
+    setState(() {
+      _currentCalendarMonth = DateTime(_currentCalendarMonth.year, _currentCalendarMonth.month + 1, 1);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF9FAFB),
+      backgroundColor: const Color(0xFFF8FAFC),
       body: Column(
         children: [
-          // Header
+          // 1. Header Bar
           Container(
             color: Colors.white,
             padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top),
-            child: SizedBox(
+            child: Container(
               height: 56,
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                boxShadow: [
+                  BoxShadow(
+                    color: Color(0x06000000),
+                    blurRadius: 10,
+                    offset: Offset(0, 4),
+                  )
+                ],
+              ),
               child: Stack(
-                alignment: Alignment.center,
                 children: [
-                  Positioned(
-                    left: 12,
-                    child: InnovativeBackButton(onTap: widget.onBack),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 12),
+                      child: InnovativeBackButton(onTap: widget.onBack),
+                    ),
                   ),
-                  Text('Diary', style: GoogleFonts.hankenGrotesk(fontSize: 18, fontWeight: FontWeight.w700, color: const Color(0xFF1F2937))),
+                  Center(
+                    child: Text(
+                      'Health Diary',
+                      style: AppTheme.sansFont(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: const Color(0xFF0F172A),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
           ),
 
+          // 2. Scrollable Body
           Expanded(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 110),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Calendar
+                  // Daily Health Log banner
                   Container(
-                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFF3F4F6))),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x04000000),
+                          blurRadius: 8,
+                          offset: Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Daily Health Log',
+                              style: AppTheme.sansFont(
+                                fontSize: 14,
+                                  fontWeight: FontWeight.w800,
+                                color: const Color(0xFF0F172A),
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Tracking health trend analysis',
+                              style: AppTheme.sansFont(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: const Color(0xFF64748B),
+                              ),
+                            ),
+                          ],
+                        ),
+                        // Date Pill (Dashboard Style)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEFF6FF),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: const Color(0xFFBFDBFE)),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.calendar_today_rounded, color: Color(0xFF1D4ED8), size: 12),
+                              const SizedBox(width: 6),
+                              Text(
+                                _formatDate(),
+                                style: AppTheme.sansFont(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: const Color(0xFF1D4ED8),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // 3. Static Date Info Cards (Day, Month, Year)
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      _buildDateCard('Day', '${DateTime.now().day}'),
+                      _buildDateCard('Month', _getMonthAbbr(DateTime.now().month)),
+                      _buildDateCard('Year', '${DateTime.now().year}'),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // 4. Premium Calendar Card (Month switches working <> now)
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x05000000),
+                          blurRadius: 16,
+                          offset: Offset(0, 8),
+                        ),
+                      ],
+                    ),
                     padding: const EdgeInsets.all(16),
                     child: Column(
                       children: [
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            IconButton(icon: const Icon(Icons.chevron_left, size: 18), color: const Color(0xFF9CA3AF), onPressed: () {}),
-                            Text('August 2026', style: GoogleFonts.hankenGrotesk(fontSize: 14, fontWeight: FontWeight.w700, color: const Color(0xFF374151))),
-                            IconButton(icon: const Icon(Icons.chevron_right, size: 18), color: const Color(0xFF9CA3AF), onPressed: () {}),
+                            IconButton(
+                              icon: const Icon(Icons.chevron_left_rounded, size: 22),
+                              color: const Color(0xFF0F172A),
+                              onPressed: _prevMonth,
+                            ),
+                            Text(
+                              '${_getMonthName(_currentCalendarMonth.month)} ${_currentCalendarMonth.year}',
+                              style: AppTheme.sansFont(
+                                fontSize: 15,
+                                  fontWeight: FontWeight.w800,
+                                color: const Color(0xFF0F172A),
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.chevron_right_rounded, size: 22),
+                              color: const Color(0xFF0F172A),
+                              onPressed: _nextMonth,
+                            ),
                           ],
                         ),
-                        const SizedBox(height: 8),
-                        // Day headers
+                        const SizedBox(height: 12),
+                        // Day Headers
                         Row(
-                          children: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => Expanded(
-                            child: Center(child: Text(d, style: GoogleFonts.hankenGrotesk(fontSize: 10, fontWeight: FontWeight.w700, color: const Color(0xFF9CA3AF), letterSpacing: 0.5))),
-                          )).toList(),
+                          children: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+                              .map((d) => Expanded(
+                                    child: Center(
+                                      child: Text(
+                                        d,
+                                        style: AppTheme.sansFont(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w800,
+                                          color: const Color(0xFF94A3B8),
+                                          letterSpacing: 0.5,
+                                        ),
+                                      ),
+                                    ),
+                                  ))
+                              .toList(),
                         ),
-                        const SizedBox(height: 8),
-                        // Calendar grid - August 2026 starts on Saturday
+                        const SizedBox(height: 12),
+                        // Interactive Calendar Rows (Showschecked checkmarks/roundings for scans)
                         ..._buildCalendarRows(),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 24),
 
-                  // Reading info
+                  // 5. "Recent Scan Results" header with week/month timeframe selector
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('Reading taken on: ${_active['dateStr']}', style: GoogleFonts.hankenGrotesk(fontSize: 12, fontWeight: FontWeight.w600, color: const Color(0xFF6B7280))),
-                      const Icon(Icons.edit, size: 14, color: Color(0xFF2DD4BF)),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Recent Scan Results',
+                            style: AppTheme.sansFont(
+                              fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                              color: const Color(0xFF0F172A),
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Analysis based on scans',
+                            style: AppTheme.sansFont(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: const Color(0xFF64748B),
+                            ),
+                          ),
+                        ],
+                      ),
+                      // Timeframe Toggle
+                      Container(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEFF6FF),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: const Color(0xFFDBEAFE)),
+                        ),
+                        padding: const EdgeInsets.all(3),
+                        child: Row(
+                          children: [
+                            _buildPeriodOption('Week'),
+                            _buildPeriodOption('Month'),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 16),
 
-                  // Metric cards grid
-                  GridView.count(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    crossAxisCount: 3,
-                    mainAxisSpacing: 12,
-                    crossAxisSpacing: 12,
-                    childAspectRatio: 1.1,
-                    children: [
-                      _DiaryCard(label: 'PULSE', value: '${_active['pulse']}', unit: 'bpm', valueColor: const Color(0xFF23B392), icon: Icons.favorite),
-                      _DiaryCard(label: 'HRV', value: '${_active['hrv']}', unit: 'ms', valueColor: const Color(0xFF23B392), icon: Icons.monitor_heart),
-                      _DiaryCard(label: 'BREATH', value: '${_active['breath']}', unit: 'bpm', valueColor: const Color(0xFFE88C30), icon: Icons.air),
-                      _DiaryCard(label: 'SYSTOLIC', sublabel: 'BP', value: '${_active['sys']}', unit: 'mmHg', valueColor: const Color(0xFF1F2937), icon: Icons.speed),
-                      _DiaryCard(label: 'DIASTOLIC', sublabel: 'BP', value: '${_active['dia']}', unit: 'mmHg', valueColor: const Color(0xFF1F2937), icon: Icons.speed_outlined),
-                    ],
+                  // 6. Dynamic Metric Trend Cards (Linked to Scan Outcomes)
+                  // 1) Blood Pressure Card
+                  _buildTrendCard(
+                    title: 'BLOOD PRESSURE',
+                    value: '${_latestScan.sys} / ${_latestScan.dia}',
+                    unit: 'mmHg',
+                    status: _latestScan.sys > 120 ? 'Prehypertension' : 'Normal',
+                    statusColor: _latestScan.sys > 120 ? const Color(0xFFEF4444) : const Color(0xFF10B981),
+                    icon: Icons.speed_rounded,
+                    lineColor: const Color(0xFFEF4444),
+                    points: _getTrendValues('sys', _timePeriod),
+                    pointsDiastolic: _getTrendValues('dia', _timePeriod),
                   ),
+                  const SizedBox(height: 16),
+
+                  // 2) Heart Rate Card
+                  _buildTrendCard(
+                    title: 'HEART RATE',
+                    value: '${_latestScan.pulse}',
+                    unit: 'bpm',
+                    status: 'Normal',
+                    statusColor: const Color(0xFF10B981),
+                    icon: Icons.favorite_rounded,
+                    lineColor: const Color(0xFF2DD4BF),
+                    points: _getTrendValues('pulse', _timePeriod),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // 3) Respiratory Health Card
+                  _buildTrendCard(
+                    title: 'RESPIRATORY HEALTH',
+                    value: '${_latestScan.breath}',
+                    unit: 'bpm',
+                    status: 'Healthy',
+                    statusColor: const Color(0xFF10B981),
+                    icon: Icons.air_rounded,
+                    lineColor: const Color(0xFF8B5CF6),
+                    points: _getTrendValues('breath', _timePeriod),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // 4) SpO2 Oxygen Level Card
+                  _buildTrendCard(
+                    title: 'OXYGEN SATURATION (SPO2)',
+                    value: '${96 + (_latestScan.pulse % 5)}',
+                    unit: '%',
+                    status: 'Optimal',
+                    statusColor: const Color(0xFF10B981),
+                    icon: Icons.opacity_rounded,
+                    lineColor: const Color(0xFF10B981),
+                    points: _getTrendValues('spo2', _timePeriod),
+                    minVal: 95.0,
+                    maxVal: 100.0,
+                  ),
+                  const SizedBox(height: 24),
                 ],
               ),
+            ),
+          ),
+        ],
+      ),
+      extendBody: true,
+      bottomNavigationBar: WavyBottomNavBar(
+        currentIndex: 1,
+        onTap: (i) {
+          if (i == 0) widget.onNavigateToHome();
+          if (i == 1) {}
+          if (i == 2) widget.onStartScan();
+          if (i == 3) widget.onNavigateToChat(null);
+          if (i == 4) widget.onNavigateToProfile();
+        },
+      ),
+    );
+  }
+
+  Widget _buildDateCard(String label, String value) {
+    return Container(
+      width: 90,
+      height: 76,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF0A5C5A), width: 2.0),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x04000000),
+            blurRadius: 8,
+            offset: Offset(0, 4),
+          )
+        ],
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            value,
+            style: AppTheme.sansFont(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              color: const Color(0xFF0A5C5A),
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: AppTheme.sansFont(
+              fontSize: 9,
+              fontWeight: FontWeight.bold,
+              color: const Color(0xFF94A3B8),
             ),
           ),
         ],
@@ -113,89 +504,363 @@ class _DiaryScreenState extends State<DiaryScreen> {
     );
   }
 
-  List<Widget> _buildCalendarRows() {
-    // August 2026: starts on Saturday (index 5 in Mon-Sun grid)
-    final List<int?> days = [
-      null, null, null, null, null, 1, 2,
-      3, 4, 5, 6, 7, 8, 9,
-      10, 11, 12, 13, 14, 15, 16,
-      17, 18, 19, 20, 21, 22, 23,
-      24, 25, 26, 27, 28, 29, 30,
-      31, null, null, null, null, null, null,
+  Widget _buildPeriodOption(String period) {
+    final isSelected = _timePeriod == period;
+    return GestureDetector(
+      onTap: () => setState(() => _timePeriod = period),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF1D4ED8) : Colors.transparent,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Text(
+          period,
+          style: AppTheme.sansFont(
+            fontSize: 10,
+            fontWeight: FontWeight.bold,
+            color: isSelected ? Colors.white : const Color(0xFF1D4ED8),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTrendCard({
+    required String title,
+    required String value,
+    required String unit,
+    required String status,
+    required Color statusColor,
+    required IconData icon,
+    required Color lineColor,
+    required List<double> points,
+    List<double>? pointsDiastolic,
+    double? minVal,
+    double? maxVal,
+  }) {
+    double calcMin = minVal ?? points.reduce(math.min);
+    double calcMax = maxVal ?? points.reduce(math.max);
+    if (pointsDiastolic != null) {
+      calcMin = math.min(calcMin, pointsDiastolic.reduce(math.min));
+      calcMax = math.max(calcMax, pointsDiastolic.reduce(math.max));
+    }
+    double delta = calcMax - calcMin > 0 ? calcMax - calcMin : 1.0;
+    calcMin -= delta * 0.1;
+    calcMax += delta * 0.1;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x03000000),
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Icon(icon, color: lineColor, size: 18),
+                  const SizedBox(width: 8),
+                  Text(
+                    title,
+                    style: AppTheme.sansFont(
+                      fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                      color: const Color(0xFF64748B),
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: statusColor.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  status,
+                  style: AppTheme.sansFont(
+                    fontSize: 8,
+                      fontWeight: FontWeight.w800,
+                    color: statusColor,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text(
+                value,
+                style: AppTheme.sansFont(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
+                  color: const Color(0xFF0F172A),
+                ),
+              ),
+              const SizedBox(width: 4),
+              Text(
+                unit,
+                style: AppTheme.sansFont(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: const Color(0xFF64748B),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            height: 90,
+            child: CustomPaint(
+              painter: _TrendLinePainter(
+                values: points,
+                valuesDiastolic: pointsDiastolic,
+                lineColor: lineColor,
+                fillGradientColor: lineColor,
+                minVal: calcMin,
+                maxVal: calcMax,
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: _getXAxisLabels(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _getXAxisLabels() {
+    if (_timePeriod == 'Week') {
+      return ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+          .map((day) => Text(
+                day,
+                style: AppTheme.sansFont(fontSize: 8, fontWeight: FontWeight.bold, color: const Color(0xFF94A3B8)),
+              ))
+          .toList();
+    } else {
+      return ['Day 1', 'Day 10', 'Day 20', 'Day 30']
+          .map((day) => Text(
+                day,
+                style: AppTheme.sansFont(fontSize: 8, fontWeight: FontWeight.bold, color: const Color(0xFF94A3B8)),
+              ))
+          .toList();
+    }
+  }
+
+  String _getMonthName(int month) {
+    const months = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
     ];
+    if (month >= 1 && month <= 12) {
+      return months[month - 1];
+    }
+    return 'August';
+  }
+
+  List<Widget> _buildCalendarRows() {
+    final year = _currentCalendarMonth.year;
+    final month = _currentCalendarMonth.month;
+    
+    final daysInMonth = DateTime(year, month + 1, 0).day;
+    final firstWeekday = DateTime(year, month, 1).weekday;
+    final startOffset = firstWeekday - 1;
+    
+    final totalCells = ((startOffset + daysInMonth) / 7).ceil() * 7;
+    final List<int?> days = List.generate(totalCells, (index) {
+      int dayIndex = index - startOffset + 1;
+      if (dayIndex >= 1 && dayIndex <= daysInMonth) {
+        return dayIndex;
+      }
+      return null;
+    });
+    
     final rows = <Widget>[];
-    for (int r = 0; r < 6; r++) {
+    int rowCount = (days.length / 7).ceil();
+    for (int r = 0; r < rowCount; r++) {
       rows.add(Row(
         children: List.generate(7, (c) {
           final day = days[r * 7 + c];
           if (day == null) return const Expanded(child: SizedBox(height: 36));
-          final isSelected = day == _selectedDay;
-          final hasDot = _data.containsKey(day);
+          
+          bool hasData = _hasScanDataForDate(year, month, day);
+
           return Expanded(
-            child: GestureDetector(
-              onTap: () => setState(() => _selectedDay = day),
-              child: Container(
-                height: 36,
-                margin: const EdgeInsets.all(1),
-                decoration: BoxDecoration(
-                  color: isSelected ? const Color(0xFF8E9FD5) : (hasDot ? const Color(0xFFF3F4F6) : Colors.transparent),
-                  shape: BoxShape.circle,
-                ),
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    Text('$day', style: GoogleFonts.hankenGrotesk(
-                      fontSize: 13, fontWeight: FontWeight.w600,
-                      color: isSelected ? Colors.white : const Color(0xFF1F2937),
-                    )),
-                    if (hasDot && !isSelected)
-                      Positioned(bottom: 3, child: Container(width: 5, height: 5, decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF22D3EE)))),
-                  ],
-                ),
+            child: Container(
+              height: 36,
+              margin: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
+                color: hasData ? const Color(0xFFEFF6FF) : Colors.transparent,
+                shape: BoxShape.circle,
+              ),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Text(
+                    '$day',
+                    style: AppTheme.sansFont(
+                      fontSize: 12,
+                      fontWeight: hasData ? FontWeight.w800 : FontWeight.w600,
+                      color: hasData ? const Color(0xFF1D4ED8) : const Color(0xFF334155),
+                    ),
+                  ),
+                  if (hasData)
+                    Positioned(
+                      bottom: 4,
+                      child: Container(
+                        width: 4,
+                        height: 4,
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Color(0xFF1D4ED8),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
           );
         }),
       ));
-      if (r < 5) rows.add(const SizedBox(height: 4));
+      if (r < rowCount - 1) rows.add(const SizedBox(height: 4));
     }
     return rows;
   }
 }
 
-class _DiaryCard extends StatelessWidget {
-  final String label, value, unit; final String? sublabel; final Color valueColor; final IconData icon;
-  const _DiaryCard({required this.label, required this.value, required this.unit, required this.valueColor, required this.icon, this.sublabel});
+class _TrendLinePainter extends CustomPainter {
+  final List<double> values;
+  final List<double>? valuesDiastolic; // for BP diastolic values
+  final Color lineColor;
+  final Color fillGradientColor;
+  final double minVal;
+  final double maxVal;
+
+  _TrendLinePainter({
+    required this.values,
+    this.valuesDiastolic,
+    required this.lineColor,
+    required this.fillGradientColor,
+    required this.minVal,
+    required this.maxVal,
+  });
+
   @override
-  Widget build(BuildContext context) => Container(
-    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFF3F4F6)), boxShadow: const [BoxShadow(color: Color(0x0A000000), blurRadius: 4)]),
-    padding: const EdgeInsets.all(10),
-    child: Stack(
-      children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(children: [
-              Text(label, style: GoogleFonts.hankenGrotesk(fontSize: 8, fontWeight: FontWeight.w700, color: const Color(0xFF9CA3AF), letterSpacing: 0.8)),
-              if (sublabel != null) ...[const SizedBox(width: 2), Text(sublabel!, style: GoogleFonts.hankenGrotesk(fontSize: 7, fontWeight: FontWeight.w700, color: Colors.red, letterSpacing: 0.8))],
-            ]),
-            const SizedBox(height: 4),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.baseline,
-              textBaseline: TextBaseline.alphabetic,
-              children: [
-                Text(value, style: GoogleFonts.hankenGrotesk(fontSize: 20, fontWeight: FontWeight.w700, color: valueColor)),
-                const SizedBox(width: 1),
-                Text(unit, style: GoogleFonts.hankenGrotesk(fontSize: 8, fontWeight: FontWeight.w600, color: valueColor)),
-              ],
-            ),
-          ],
-        ),
-        Positioned(
-          right: -4, bottom: -4,
-          child: Icon(icon, size: 28, color: const Color(0xFF000000).withOpacity(0.06)),
-        ),
-      ],
-    ),
-  );
+  void paint(Canvas canvas, Size size) {
+    if (values.isEmpty) return;
+    
+    final w = size.width;
+    final h = size.height;
+
+    // Draw horizontal grid lines
+    final gridPaint = Paint()
+      ..color = const Color(0xFFF1F5F9)
+      ..strokeWidth = 1.0;
+    
+    canvas.drawLine(Offset(0, 0), Offset(w, 0), gridPaint);
+    canvas.drawLine(Offset(0, h / 2), Offset(w, h / 2), gridPaint);
+    canvas.drawLine(Offset(0, h), Offset(w, h), gridPaint);
+
+    final double stepX = w / (values.length - 1);
+    final range = maxVal - minVal > 0 ? maxVal - minVal : 1.0;
+
+    double getX(int i) => i * stepX;
+    double getY(double val) {
+      double pct = (val - minVal) / range;
+      pct = pct.clamp(0.08, 0.92);
+      return h - (pct * h);
+    }
+
+    // 1. Draw Systolic / Primary Wave
+    _drawCurve(canvas, w, h, values, getX, getY, lineColor, fillGradientColor);
+
+    // 2. Draw Diastolic Wave if BP
+    if (valuesDiastolic != null) {
+      _drawCurve(canvas, w, h, valuesDiastolic!, getX, getY, const Color(0xFFF87171), const Color(0xFFF87171));
+    }
+  }
+
+  void _drawCurve(
+    Canvas canvas,
+    double w,
+    double h,
+    List<double> data,
+    double Function(int) getX,
+    double Function(double) getY,
+    Color strokeColor,
+    Color fillColor,
+  ) {
+    final linePath = Path();
+    final fillPath = Path();
+
+    linePath.moveTo(getX(0), getY(data[0]));
+    fillPath.moveTo(getX(0), h);
+    fillPath.lineTo(getX(0), getY(data[0]));
+
+    for (int i = 1; i < data.length; i++) {
+      double x = getX(i);
+      double y = getY(data[i]);
+      linePath.lineTo(x, y);
+      fillPath.lineTo(x, y);
+    }
+    fillPath.lineTo(getX(data.length - 1), h);
+    fillPath.close();
+
+    // Draw area gradient fill
+    final fillPaint = Paint()
+      ..shader = LinearGradient(
+        colors: [fillColor.withOpacity(0.12), fillColor.withOpacity(0.01)],
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+      ).createShader(Rect.fromLTWH(0, 0, w, h))
+      ..style = PaintingStyle.fill;
+    canvas.drawPath(fillPath, fillPaint);
+
+    // Draw main line path
+    final linePaint = Paint()
+      ..color = strokeColor
+      ..strokeWidth = 2.5
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+    canvas.drawPath(linePath, linePaint);
+
+    // Draw dots at key nodes for short counts (Week view)
+    if (data.length <= 10) {
+      final dotOuterPaint = Paint()
+        ..color = strokeColor
+        ..style = PaintingStyle.fill;
+      final dotInnerPaint = Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.fill;
+
+      for (int i = 0; i < data.length; i++) {
+        Offset pt = Offset(getX(i), getY(data[i]));
+        canvas.drawCircle(pt, 5.0, dotOuterPaint);
+        canvas.drawCircle(pt, 2.5, dotInnerPaint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_TrendLinePainter oldDelegate) => true;
 }
