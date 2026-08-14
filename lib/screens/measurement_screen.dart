@@ -6,10 +6,6 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:camera/camera.dart';
 import '../components/innovative_back_button.dart';
 import '../theme/app_theme.dart';
-import '../services/face_detector_service.dart';
-import '../services/rppg_signal_processor.dart';
-import '../services/websocket_backend_service.dart';
-import '../components/face_painter.dart';
 
 enum ScanState { idle, scanning, completed }
 
@@ -41,20 +37,11 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
   late AnimationController _bracketCtrl;
   late Animation<double> _scanlineAnim, _bracketAnim;
 
-  // Real Camera & Face Detection support
+  // Real Camera support
   List<CameraDescription> _cameras = [];
   CameraController? _cameraController;
   bool _cameraInitialized = false;
   int _selectedCameraIndex = 0;
-
-  FaceDetectorService? _faceDetectorService;
-  RPPGSignalProcessor? _rppgProcessor;
-  WebSocketBackendService? _webSocketService;
-  StreamSubscription<ProcessedMetrics>? _backendSubscription;
-
-  FaceDetectionData? _faceData;
-  String _liveStatusMessage = "👤 Center your face in frame";
-  bool _isStreamingImage = false;
 
   // AI Advice Ticker list
   final List<String> _advices = [
@@ -74,39 +61,18 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
     _scanlineAnim = Tween<double>(begin: 0.1, end: 0.9).animate(_scanlineCtrl);
     _bracketCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 800))..repeat(reverse: true);
     _bracketAnim = Tween<double>(begin: 0.6, end: 1.0).animate(CurvedAnimation(parent: _bracketCtrl, curve: Curves.easeInOut));
-
-    _faceDetectorService = FaceDetectorService();
-    _rppgProcessor = RPPGSignalProcessor();
-    _webSocketService = WebSocketBackendService();
-
-    _backendSubscription = _webSocketService?.metricsStream.listen((metrics) {
-      if (mounted && _state == ScanState.scanning) {
-        if (metrics.bpm > 0) {
-          setState(() {
-            _pulseVal = metrics.bpm.round().toString();
-            int sys = 110 + (metrics.bpm * 0.1).round();
-            int dia = 70 + (metrics.bpm * 0.05).round();
-            _bpVal = '$sys / $dia';
-          });
-        }
-      }
-    });
-
+    
     // Attempt camera initialization
     _initCamera();
   }
 
   @override
   void dispose() {
-    _stopImageStream();
     _timer?.cancel();
     _simTimer?.cancel();
     _adviceTimer?.cancel();
     _scanlineCtrl.dispose();
     _bracketCtrl.dispose();
-    _backendSubscription?.cancel();
-    _webSocketService?.dispose();
-    _faceDetectorService?.dispose();
     _cameraController?.dispose();
     super.dispose();
   }
@@ -139,7 +105,6 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
         setState(() {
           _cameraInitialized = true;
         });
-        _startImageStream();
       }
     } catch (e) {
       debugPrint("Camera initialize error: $e");
@@ -153,90 +118,8 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
 
   Future<void> _toggleCamera() async {
     if (_cameras.length < 2) return;
-    _stopImageStream();
     _selectedCameraIndex = (_selectedCameraIndex + 1) % _cameras.length;
     await _setupCameraController(_cameras[_selectedCameraIndex]);
-  }
-
-  Timer? _fallbackStreamTimer;
-
-  void _startImageStream() {
-    bool nativeStreamStarted = false;
-    _rppgProcessor?.reset();
-
-    if (_cameraController != null && _cameraController!.value.isInitialized && !_isStreamingImage) {
-      try {
-        _cameraController!.startImageStream((CameraImage image) {
-          _processFrameData(image: image);
-        });
-        _isStreamingImage = true;
-        nativeStreamStarted = true;
-      } catch (e) {
-        debugPrint("Native camera startImageStream not supported on this platform: $e");
-        _isStreamingImage = false;
-      }
-    }
-
-    if (!nativeStreamStarted) {
-      // 30 FPS periodic timer pump for Desktop/Web/Fallback camera streams
-      _fallbackStreamTimer?.cancel();
-      _fallbackStreamTimer = Timer.periodic(const Duration(milliseconds: 33), (_) {
-        if (!mounted) return;
-        _processFrameData(image: null);
-      });
-    }
-  }
-
-  Future<void> _processFrameData({CameraImage? image}) async {
-    if (!mounted) return;
-
-    final sensorOrientation = _cameras.isNotEmpty ? _cameras[_selectedCameraIndex].sensorOrientation : 0;
-    final lensDirection = _cameras.isNotEmpty ? _cameras[_selectedCameraIndex].lensDirection : CameraLensDirection.front;
-
-    final detection = await _faceDetectorService?.processCameraImage(
-      image: image,
-      sensorOrientation: sensorOrientation,
-      lensDirection: lensDirection,
-    );
-
-    if (detection != null && mounted) {
-      // Stream payload to Python FastAPI backend via WebSocket during scan
-      if (_state == ScanState.scanning) {
-        _webSocketService?.sendFramePayload(detection);
-      }
-
-      RPPGResult? rppgResult;
-      if (image != null) {
-        rppgResult = _rppgProcessor?.processFrame(
-          image: image,
-          detectionData: detection,
-        );
-      }
-
-      setState(() {
-        _faceData = detection;
-        _liveStatusMessage = detection.statusMessage;
-        if (rppgResult != null && rppgResult.isValid && rppgResult.bpm > 0) {
-          _pulseVal = rppgResult.bpm.round().toString();
-          int sys = 110 + (rppgResult.bpm * 0.1).round();
-          int dia = 70 + (rppgResult.bpm * 0.05).round();
-          _bpVal = '$sys / $dia';
-        }
-      });
-    }
-  }
-
-  void _stopImageStream() {
-    _fallbackStreamTimer?.cancel();
-    _fallbackStreamTimer = null;
-    if (_cameraController != null && _isStreamingImage) {
-      _isStreamingImage = false;
-      try {
-        _cameraController!.stopImageStream();
-      } catch (e) {
-        debugPrint("Error stopping image stream: $e");
-      }
-    }
   }
 
   void _startScan() {
@@ -246,11 +129,7 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
       _pulseVal = '72';
       _bpVal = '115 / 72';
       _adviceIndex = 0;
-      _liveStatusMessage = "👤 Center your face in frame";
     });
-
-    _webSocketService?.connect();
-    _startImageStream();
 
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       setState(() {
@@ -258,10 +137,8 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
           _timer?.cancel();
           _simTimer?.cancel();
           _adviceTimer?.cancel();
-          _stopImageStream();
-          _webSocketService?.disconnect();
           _state = ScanState.completed;
-          _pulseVal = _rppgProcessor?.currentBpm.round().toString() ?? '75';
+          _pulseVal = '75';
           _bpVal = '117 / 74';
           _timeLeft = 0;
         } else {
@@ -271,7 +148,6 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
     });
 
     _simTimer = Timer.periodic(const Duration(milliseconds: 1500), (_) {
-      if (_rppgProcessor != null && _rppgProcessor!.isLocked) return;
       final r = DateTime.now().millisecondsSinceEpoch;
       final p = 70 + (r % 15);
       final s = 112 + (r % 8);
@@ -295,14 +171,11 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
     _timer?.cancel();
     _simTimer?.cancel();
     _adviceTimer?.cancel();
-    _stopImageStream();
-    _webSocketService?.disconnect();
     setState(() {
       _state = ScanState.idle;
       _timeLeft = 30;
       _pulseVal = '--';
       _bpVal = '-- / --';
-      _faceData = null;
     });
   }
 
@@ -459,6 +332,11 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
   }
 
   Widget _buildCameraOrScanArea() {
+    if (_state == ScanState.idle) {
+      // Idle state: rotating radar concentric arches with START button
+      return _buildRadarStartTarget();
+    }
+
     if (_state == ScanState.completed) {
       return Container(
         color: const Color(0xFF0F172A),
@@ -493,7 +371,7 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
       );
     }
 
-    // Active Camera Viewport with Real-Time Face Detection & Head Position Analysis
+    // Scanning State: Show real CameraPreview or Simulated Scan
     return Stack(
       alignment: Alignment.center,
       children: [
@@ -516,34 +394,68 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
                 ),
         ),
 
-        // Real-time Face Mesh, Bounding Box & Head Position HUD Overlay
-        Positioned.fill(
-          child: AnimatedBuilder(
-            animation: _scanlineCtrl,
-            builder: (context, _) => CustomPaint(
-              painter: FaceOverlayPainter(
-                detectionData: _faceData,
-                scanlineProgress: _scanlineAnim.value,
-                isFrontCamera: _cameras.isNotEmpty &&
-                    _cameras[_selectedCameraIndex].lensDirection == CameraLensDirection.front,
+        // Simulated Face Mesh Overlay (only draw fallback if camera is not active)
+        if (!_cameraInitialized)
+          Positioned.fill(
+            child: CustomPaint(
+              painter: _FaceMeshPainter(_scanlineCtrl.value),
+            ),
+          ),
+
+        // Corner Brackets
+        AnimatedBuilder(
+          animation: _bracketAnim,
+          builder: (_, __) => Stack(
+            children: [
+              _Bracket(top: 24, left: 24, showRight: false, showBottom: false, opacity: _bracketAnim.value),
+              _Bracket(top: 24, right: 24, showLeft: false, showBottom: false, opacity: _bracketAnim.value),
+              _Bracket(bottom: 24, left: 24, showRight: false, showTop: false, opacity: _bracketAnim.value),
+              _Bracket(bottom: 24, right: 24, showLeft: false, showTop: false, opacity: _bracketAnim.value),
+            ],
+          ),
+        ),
+
+        // Dynamic Scan Laser line
+        AnimatedBuilder(
+          animation: _scanlineAnim,
+          builder: (_, __) => Positioned(
+            top: MediaQuery.of(context).size.height * 0.5 * _scanlineAnim.value,
+            left: 0,
+            right: 0,
+            child: Container(
+              height: 3,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.transparent,
+                    const Color(0xFF22D3EE).withOpacity(0.8),
+                    Colors.transparent,
+                  ],
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF22D3EE).withOpacity(0.6),
+                    blurRadius: 10,
+                  ),
+                ],
               ),
             ),
           ),
         ),
 
-        // Floating Action Button at Bottom (START SCAN when idle, STOP SCAN when scanning)
+        // Stop scanning overlay trigger/button (floating above)
         Positioned(
           bottom: 16,
           child: GestureDetector(
-            onTap: _state == ScanState.scanning ? _stopScan : _startScan,
+            onTap: _stopScan,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               decoration: BoxDecoration(
-                color: _state == ScanState.scanning ? Colors.redAccent : const Color(0xFF22D3EE),
+                color: Colors.redAccent,
                 borderRadius: BorderRadius.circular(16),
                 boxShadow: [
                   BoxShadow(
-                    color: (_state == ScanState.scanning ? Colors.redAccent : const Color(0xFF22D3EE)).withOpacity(0.4),
+                    color: Colors.redAccent.withOpacity(0.4),
                     blurRadius: 12,
                   ),
                 ],
@@ -551,10 +463,10 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(_state == ScanState.scanning ? Icons.stop_rounded : Icons.play_arrow_rounded, color: Colors.white, size: 20),
+                  const Icon(Icons.stop_rounded, color: Colors.white, size: 18),
                   const SizedBox(width: 8),
                   Text(
-                    _state == ScanState.scanning ? 'STOP SCAN' : 'START SCAN',
+                    'STOP SCAN',
                     style: AppTheme.sansFont(
                       fontSize: 13,
                       fontWeight: FontWeight.bold,
@@ -774,8 +686,8 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
               AnimatedSwitcher(
                 duration: const Duration(milliseconds: 300),
                 child: Text(
-                  _faceData != null ? _liveStatusMessage : _advices[_adviceIndex],
-                  key: ValueKey<String>(_faceData != null ? _liveStatusMessage : _advices[_adviceIndex]),
+                  _advices[_adviceIndex],
+                  key: ValueKey<int>(_adviceIndex),
                   style: AppTheme.sansFont(
                     fontSize: 8,
                     fontWeight: FontWeight.bold,
@@ -1326,7 +1238,7 @@ class _CartoonScanPainter extends CustomPainter {
     final laserPaint = Paint()
       ..color = const Color(0xFF2DD4BF)
       ..strokeWidth = 2.0
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.0);
+      ..shadowColor = const Color(0xFF2DD4BF).withOpacity(0.8);
     canvas.drawLine(Offset(w * 0.275, laserY), Offset(w * 0.325, laserY), laserPaint);
 
     // ── 5. FLORA / FOLIAGE (Teal / Red leaves matching reference) ──
