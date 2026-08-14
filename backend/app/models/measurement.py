@@ -32,6 +32,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 
 if TYPE_CHECKING:
+    from app.models.measurement_result import MeasurementResult
     from app.models.user import User
 
 
@@ -104,7 +105,8 @@ class Measurement(Base):
 
     Relationships
     -------------
-    user         Many-to-one relationship to the owning User.
+    user    Many-to-one relationship to the owning User.
+    result  1:1 relationship to MeasurementResult (the finalized ML output).
     """
 
     __tablename__ = "measurements"
@@ -137,6 +139,13 @@ class Measurement(Base):
     user: Mapped["User"] = relationship(
         "User",
         back_populates="measurements",
+    )
+
+    # 1:1 relationship to MeasurementResult (uselist=False enforces the one-to-one)
+    result: Mapped["MeasurementResult | None"] = relationship(
+        "MeasurementResult",
+        back_populates="measurement",
+        uselist=False,
     )
 
     # ------------------------------------------------------------------
