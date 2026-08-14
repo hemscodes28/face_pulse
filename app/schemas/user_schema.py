@@ -1,5 +1,5 @@
-from pydantic import BaseModel, Field
-from typing import Optional
+from pydantic import BaseModel, Field, model_validator
+from typing import Optional, Any
 from datetime import datetime
 from app.models.enums import GenderEnum, BloodGroupEnum, UserRole
 
@@ -24,9 +24,39 @@ class ProfileBasicUpdateRequest(BaseModel):
     date_of_birth: str = Field(..., description="YYYY-MM-DD format")
     gender: GenderEnum = Field(..., description="MALE, FEMALE, OTHER, PREFER_NOT_TO_SAY")
 
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_gender(cls, data: Any):
+        if isinstance(data, dict) and "gender" in data and isinstance(data["gender"], str):
+            val = data["gender"].upper().strip()
+            if val in [e.value for e in GenderEnum]:
+                data["gender"] = val
+            elif val in GenderEnum.__members__:
+                data["gender"] = GenderEnum[val].value
+        return data
+
 class ProfileBodyUpdateRequest(BaseModel):
-    height_cm: float = Field(..., gt=0, description="Height in centimeters (e.g. 175.0)")
-    weight_kg: float = Field(..., gt=0, description="Weight in kg (e.g. 70.5)")
+    height_cm: Optional[float] = None
+    height: Optional[float] = None
+    weight_kg: Optional[float] = None
+    weight: Optional[float] = None
+
+    @model_validator(mode="after")
+    def compute_fields(self):
+        # Resolve height
+        if self.height_cm is None:
+            if self.height is not None:
+                # If height was entered in meters (e.g. 1.75m), convert to 175.0cm
+                self.height_cm = round(self.height * 100.0, 2) if self.height < 3.0 else float(self.height)
+            else:
+                raise ValueError("height_cm or height is required")
+        # Resolve weight
+        if self.weight_kg is None:
+            if self.weight is not None:
+                self.weight_kg = float(self.weight)
+            else:
+                raise ValueError("weight_kg or weight is required")
+        return self
 
 class ProfileMedicalUpdateRequest(BaseModel):
     blood_group: BloodGroupEnum = Field(..., description="A+, A-, B+, B-, AB+, AB-, O+, O-")

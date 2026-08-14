@@ -204,9 +204,11 @@ export default function App() {
     const fd = new FormData(e.target);
     setLoading(true); setError('');
     try {
+      const rawHeight = parseFloat(fd.get('height'));
+      const height_cm = rawHeight < 3.0 ? rawHeight * 100 : rawHeight;
       const res = await fetch(`${API}/users/${auth.user_id}/profile/body`, {
         method: 'PUT', headers: headers(),
-        body: JSON.stringify({ height: parseFloat(fd.get('height')), weight: parseFloat(fd.get('weight')) }),
+        body: JSON.stringify({ height_cm: height_cm, weight_kg: parseFloat(fd.get('weight')) }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Update failed');
@@ -402,9 +404,10 @@ export default function App() {
             <label>Gender</label>
             <select name="gender" required>
               <option value="">Select gender</option>
-              <option value="Male">Male</option>
-              <option value="Female">Female</option>
-              <option value="Other">Other</option>
+              <option value="MALE">Male</option>
+              <option value="FEMALE">Female</option>
+              <option value="OTHER">Other</option>
+              <option value="PREFER_NOT_TO_SAY">Prefer not to say</option>
             </select>
           </div>
           {error && <div className="alert alert-error">{error}</div>}
@@ -426,8 +429,8 @@ export default function App() {
         <div className="card-sub">BMI will be calculated automatically</div>
         <form onSubmit={handleOnboardBody}>
           <div className="form-group">
-            <label>Height (meters)</label>
-            <input name="height" type="number" step="0.01" min="0.5" max="3" placeholder="e.g. 1.75" required />
+            <label>Height (cm or meters)</label>
+            <input name="height" type="number" step="0.1" min="0.5" max="250" placeholder="e.g. 175 cm (or 1.75 m)" required />
           </div>
           <div className="form-group">
             <label>Weight (kg)</label>
