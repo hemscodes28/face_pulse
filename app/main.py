@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routes import measurement_routes, auth_routes, user_routes, diary_routes
+from app.routes import measurement_routes, auth_routes, user_routes, diary_routes, guardian_routes
 
 app = FastAPI(
     title="Face Pulse API",
@@ -21,6 +21,7 @@ app.include_router(measurement_routes.router)
 app.include_router(auth_routes.router)
 app.include_router(user_routes.router)
 app.include_router(diary_routes.router)
+app.include_router(guardian_routes.router)
 
 @app.get("/")
 def read_root():

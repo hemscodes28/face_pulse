@@ -3,6 +3,7 @@ import uuid
 from datetime import datetime, timezone
 from fastapi import WebSocket, WebSocketDisconnect
 
+from app.models.enums import MeasurementStatus, SignalQualityLevelEnum
 from app.schemas.measurement_schema import (
     MeasurementStartResponse, 
     DeviceInfo, 
@@ -12,6 +13,7 @@ from app.schemas.measurement_schema import (
 )
 from app.services.session_store import sessions
 from app.services.diary_service import add_diary_entry
+from app.services.user_store import users
 import app.services.quality_service as qs
 
 def start_measurement_session(user_id: str, device: DeviceInfo) -> MeasurementStartResponse:
@@ -24,14 +26,15 @@ def start_measurement_session(user_id: str, device: DeviceInfo) -> MeasurementSt
     sessions[measurement_id] = {
         "user_id": user_id,
         "device": device.model_dump(),
-        "status": "READY",
+        "status": MeasurementStatus.READY,
         "started_at": started_at.isoformat(),
+        "completed_at": None,
         "results": None
     }
     
     return MeasurementStartResponse(
         measurement_id=measurement_id,
-        status="READY",
+        status=MeasurementStatus.READY,
         message="Measurement session created",
         started_at=started_at
     )
@@ -45,12 +48,12 @@ async def run_measurement_loop(measurement_id: str, websocket: WebSocket):
         await websocket.close(code=4004, reason="Session not found")
         return
         
-    if session["status"] != "READY":
+    if session["status"] != MeasurementStatus.READY:
         await websocket.close(code=4000, reason="Session is not in READY state")
         return
         
     await websocket.accept()
-    session["status"] = "MEASURING"
+    session["status"] = MeasurementStatus.MEASURING
     
     start_time = datetime.now(timezone.utc)
     measurement_duration = 40.0  # Simulate 40 seconds of measuring
@@ -105,18 +108,48 @@ async def run_measurement_loop(measurement_id: str, websocket: WebSocket):
             await asyncio.sleep(update_interval)
             
         # Processing state
-        session["status"] = "PROCESSING"
+        session["status"] = MeasurementStatus.PROCESSING
         await websocket.send_text('{"status": "PROCESSING", "message": "Analyzing data..."}')
         
         # Simulate processing delay
         await asyncio.sleep(2.0)
         
         # Completed
-        session["status"] = "COMPLETED"
+        completed_at = datetime.now(timezone.utc)
+        session["status"] = MeasurementStatus.COMPLETED
+        session["completed_at"] = completed_at.isoformat()
+        
+        user_id = session["user_id"]
+        user = users.get(user_id, {})
+        
         session["results"] = {
+            "id": str(uuid.uuid4()),
+            "measurement_id": measurement_id,
+            "status": MeasurementStatus.COMPLETED,
+            "heart_rate_bpm": 72.0,
+            "systolic_bp_mmhg": 120.0,
+            "diastolic_bp_mmhg": 80.0,
+            "hrv_ms": 48.5,
+            "breathing_rate_bpm": 16.0,
+            "stress_index": 1.25,
+            "cardiac_workload": 8640.0,
+            "parasympathetic_activity_percent": 68.5,
+            "bmi": user.get("bmi", 22.86),
+            "bmi_classification": user.get("bmi_classification", "Normal"),
+            "signal_quality_score": 0.85,
+            "signal_quality_level": SignalQualityLevelEnum.GOOD,
+            "rescan_recommended": False,
+            "quality_message": "Good lighting and stable tracking throughout the session.",
+            "analysis": {
+                "rhythm": "Normal sinus rhythm",
+                "cardiovascular_state": "Optimal resting condition",
+                "autonomic_balance": "Parasympathetic dominant (relaxed)"
+            },
+            "model_name": "FacePulse-rPPG-Core",
+            "model_version": "v1.2.0",
+            "processed_at": completed_at,
             "vitals": {"hr": 72, "spo2": 98, "bp": "120/80"},
-            "quality_summary": {"avg_quality": 0.85},
-            "analysis": "Normal sinus rhythm."
+            "quality_summary": {"avg_quality": 0.85}
         }
         
         # Save final vitals + time-series to Diary Store
@@ -124,7 +157,7 @@ async def run_measurement_loop(measurement_id: str, websocket: WebSocket):
         add_diary_entry(
             user_id=session["user_id"],
             measurement_id=measurement_id,
-            recorded_at=datetime.now(timezone.utc),
+            recorded_at=completed_at,
             hr=vitals["hr"],
             spo2=vitals["spo2"],
             bp_str=vitals["bp"],
@@ -137,10 +170,10 @@ async def run_measurement_loop(measurement_id: str, websocket: WebSocket):
         await websocket.close(code=1000, reason="Measurement completed successfully")
         
     except WebSocketDisconnect:
-        session["status"] = "FAILED"
+        session["status"] = MeasurementStatus.FAILED
         print(f"WebSocket disconnected for {measurement_id}")
     except Exception as e:
-        session["status"] = "FAILED"
+        session["status"] = MeasurementStatus.FAILED
         print(f"Error in measurement loop: {e}")
         await websocket.close(code=1011, reason="Internal server error")
 
@@ -150,16 +183,37 @@ def get_measurement_result(measurement_id: str) -> MeasurementResult:
     if not session:
         return None
         
-    if session["status"] != "COMPLETED" or not session.get("results"):
+    if session["status"] != MeasurementStatus.COMPLETED or not session.get("results"):
         return None
         
     duration = (datetime.now(timezone.utc) - datetime.fromisoformat(session["started_at"])).total_seconds()
+    res = session["results"]
     
     return MeasurementResult(
+        id=res.get("id"),
         measurement_id=measurement_id,
         status=session["status"],
         duration_sec=round(duration, 2),
-        vitals=session["results"]["vitals"],
-        quality_summary=session["results"]["quality_summary"],
-        analysis=session["results"]["analysis"]
+        started_at=datetime.fromisoformat(session["started_at"]),
+        completed_at=datetime.fromisoformat(session["completed_at"]) if session.get("completed_at") else None,
+        heart_rate_bpm=res.get("heart_rate_bpm"),
+        systolic_bp_mmhg=res.get("systolic_bp_mmhg"),
+        diastolic_bp_mmhg=res.get("diastolic_bp_mmhg"),
+        hrv_ms=res.get("hrv_ms"),
+        breathing_rate_bpm=res.get("breathing_rate_bpm"),
+        stress_index=res.get("stress_index"),
+        cardiac_workload=res.get("cardiac_workload"),
+        parasympathetic_activity_percent=res.get("parasympathetic_activity_percent"),
+        bmi=res.get("bmi"),
+        bmi_classification=res.get("bmi_classification"),
+        signal_quality_score=res.get("signal_quality_score"),
+        signal_quality_level=res.get("signal_quality_level"),
+        rescan_recommended=res.get("rescan_recommended", False),
+        quality_message=res.get("quality_message"),
+        analysis=res.get("analysis"),
+        model_name=res.get("model_name"),
+        model_version=res.get("model_version"),
+        processed_at=res.get("processed_at"),
+        vitals=res.get("vitals"),
+        quality_summary=res.get("quality_summary")
     )
