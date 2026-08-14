@@ -9,6 +9,7 @@ them through Base.metadata when it imports this package.
 from app.models.measurement import Measurement, MeasurementStatus
 from app.models.user import User, UserRole
 from app.models.user_guardian import GuardianRelationshipStatus, UserGuardian
+from app.models.user_profile import BloodGroup, Gender, UserProfile
 
 __all__ = [
     "User",
@@ -17,4 +18,7 @@ __all__ = [
     "MeasurementStatus",
     "UserGuardian",
     "GuardianRelationshipStatus",
+    "UserProfile",
+    "Gender",
+    "BloodGroup",
 ]

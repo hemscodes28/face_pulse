@@ -22,6 +22,7 @@ from app.core.database import Base
 if TYPE_CHECKING:
     from app.models.measurement import Measurement
     from app.models.user_guardian import UserGuardian
+    from app.models.user_profile import UserProfile
 
 
 # ---------------------------------------------------------------------------
@@ -74,6 +75,7 @@ class User(Base):
     measurements           1:N relationship to Measurement rows owned by this user.
     guardian_relationships 1:N relationship to UserGuardian rows where this user is the data owner.
     owned_guardians        1:N relationship to UserGuardian rows where this user is the guardian recipient.
+    profile                1:1 relationship to UserProfile health profile.
     """
 
     __tablename__ = "users"
@@ -166,6 +168,13 @@ class User(Base):
         "UserGuardian",
         foreign_keys="[UserGuardian.guardian_user_id]",
         back_populates="guardian_user",
+    )
+
+    # 1:1 relationship to UserProfile
+    profile: Mapped["UserProfile | None"] = relationship(
+        "UserProfile",
+        back_populates="user",
+        uselist=False,
     )
 
     def __repr__(self) -> str:  # pragma: no cover
