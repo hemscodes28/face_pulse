@@ -489,54 +489,55 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
         return Stack(
           alignment: Alignment.center,
           children: [
-            // Sci-fi rotating concentric circles
+            // Animated Custom Cartoon Illustration representing biometric face scanning
             Positioned.fill(
-              child: CustomPaint(
-                painter: _RadarTargetPainter(
-                  _scanlineCtrl.value * 2 * math.pi,
-                  _bracketAnim.value,
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 84, top: 12),
+                child: CustomPaint(
+                  painter: _CartoonScanPainter(animationValue: _scanlineCtrl.value),
                 ),
               ),
             ),
 
-            // Start button inside
-            GestureDetector(
-              onTap: _startScan,
-              child: Container(
-                width: 110,
-                height: 110,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF22D3EE), Color(0xFF0066CC)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF22D3EE).withOpacity(0.35),
-                      blurRadius: 20 * _bracketAnim.value,
-                      spreadRadius: 2,
+            // Floating glowing START SCAN button at the bottom
+            Positioned(
+              bottom: 24,
+              child: GestureDetector(
+                onTap: _startScan,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 15),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(30),
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF2DD4BF), Color(0xFF0EA5E9)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
                     ),
-                  ],
-                ),
-                child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF2DD4BF).withOpacity(0.4),
+                        blurRadius: 16,
+                        spreadRadius: 2,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       const Icon(
                         Icons.play_arrow_rounded,
                         color: Colors.white,
-                        size: 32,
+                        size: 24,
                       ),
-                      const SizedBox(height: 2),
+                      const SizedBox(width: 8),
                       Text(
-                        'START',
+                        'START SCAN',
                         style: AppTheme.sansFont(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
                           color: Colors.white,
-                          letterSpacing: 1,
+                          letterSpacing: 1.0,
                         ),
                       ),
                     ],
@@ -1012,4 +1013,283 @@ class _EcgPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_EcgPainter oldDelegate) => true;
+}
+
+class _CartoonScanPainter extends CustomPainter {
+  final double animationValue;
+  _CartoonScanPainter({required this.animationValue});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+
+    // Define colors matching the reference photo
+    final outlinePaint = Paint()
+      ..color = const Color(0xFFF1F5F9) // Light off-white stroke for dark theme
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+
+    final darkOutlinePaint = Paint()
+      ..color = const Color(0xFF0F172A)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0;
+
+    final redPaint = Paint()
+      ..color = const Color(0xFFEF4444)
+      ..style = PaintingStyle.fill;
+
+    final whitePaint = Paint()
+      ..color = const Color(0xFFF8FAFC)
+      ..style = PaintingStyle.fill;
+
+    final darkPaint = Paint()
+      ..color = const Color(0xFF1E293B)
+      ..style = PaintingStyle.fill;
+
+    final skinPaint = Paint()
+      ..color = const Color(0xFFFEE2E2)
+      ..style = PaintingStyle.fill;
+
+    final tealPaint = Paint()
+      ..color = const Color(0xFF2DD4BF)
+      ..style = PaintingStyle.fill;
+
+    // Breathing offset for cartoon body
+    final breathe = math.sin(animationValue * 2 * math.pi) * 1.5;
+
+    // ── 1. BACKGROUND DECORATIVE SHAPES ──
+    // Draw decorative dark circle
+    canvas.drawCircle(Offset(w * 0.72, h * 0.58), 24, darkPaint);
+    canvas.drawCircle(Offset(w * 0.72, h * 0.58), 24, outlinePaint);
+
+    final circleOutline = Paint()
+      ..color = Colors.white.withOpacity(0.08)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+    canvas.drawCircle(Offset(w * 0.22, h * 0.56), 8, circleOutline);
+
+    // ── 2. BACKGROUND DASHBOARD SCREEN ──
+    final dbRect = Rect.fromLTWH(w * 0.32, h * 0.16, w * 0.56, h * 0.44);
+    final dbPaint = Paint()
+      ..color = Colors.white.withOpacity(0.03)
+      ..style = PaintingStyle.fill;
+    canvas.drawRRect(RRect.fromRectAndRadius(dbRect, const Radius.circular(12)), dbPaint);
+    
+    // Dashboard border
+    canvas.drawRRect(RRect.fromRectAndRadius(dbRect, const Radius.circular(12)), outlinePaint);
+
+    // Dotted vertical line inside dashboard
+    final dottedPaint = Paint()
+      ..color = Colors.white.withOpacity(0.08)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0;
+    double startY = h * 0.16;
+    double endY = h * 0.6;
+    double dashWidth = 4.0;
+    double dashSpace = 4.0;
+    while (startY < endY) {
+      canvas.drawLine(Offset(w * 0.72, startY), Offset(w * 0.72, startY + dashWidth), dottedPaint);
+      startY += dashWidth + dashSpace;
+    }
+
+    // Draw little UI lines on the dashboard
+    final uiLinePaint = Paint()
+      ..color = Colors.white.withOpacity(0.15)
+      ..strokeWidth = 4.0
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(Offset(w * 0.76, h * 0.24), Offset(w * 0.84, h * 0.24), uiLinePaint);
+    canvas.drawLine(Offset(w * 0.76, h * 0.29), Offset(w * 0.84, h * 0.29), uiLinePaint);
+    canvas.drawLine(Offset(w * 0.76, h * 0.34), Offset(w * 0.84, h * 0.34), uiLinePaint);
+
+    // Draw a heartbeat line on the dashboard (Red)
+    final heartPath = Path();
+    heartPath.moveTo(w * 0.36, h * 0.45);
+    heartPath.lineTo(w * 0.41, h * 0.45);
+    heartPath.lineTo(w * 0.43, h * 0.38);
+    heartPath.lineTo(w * 0.45, h * 0.52);
+    heartPath.lineTo(w * 0.47, h * 0.45);
+    heartPath.lineTo(w * 0.54, h * 0.45);
+    final heartLinePaint = Paint()
+      ..color = const Color(0xFFEF4444)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0;
+    canvas.drawPath(heartPath, heartLinePaint);
+
+    // Badge ribbon (Red medal) on dashboard
+    final badgePath = Path();
+    badgePath.moveTo(w * 0.40, h * 0.24);
+    badgePath.lineTo(w * 0.42, h * 0.32);
+    badgePath.lineTo(w * 0.40, h * 0.30);
+    badgePath.lineTo(w * 0.38, h * 0.32);
+    badgePath.close();
+    canvas.drawPath(badgePath, redPaint);
+    canvas.drawPath(badgePath, darkOutlinePaint);
+    
+    final badgeCirclePaint = Paint()
+      ..color = const Color(0xFFEF4444)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(Offset(w * 0.40, h * 0.22), 8, badgeCirclePaint);
+    canvas.drawCircle(Offset(w * 0.40, h * 0.22), 8, darkOutlinePaint);
+
+    // ── 3. CHARACTER DRAWINGS (Flat vector outline style) ──
+    // Left Leg
+    final leftLeg = Path()
+      ..moveTo(w * 0.25, h * 0.58)
+      ..lineTo(w * 0.20, h * 0.78)
+      ..lineTo(w * 0.23, h * 0.78)
+      ..lineTo(w * 0.28, h * 0.58)
+      ..close();
+    canvas.drawPath(leftLeg, whitePaint);
+    canvas.drawPath(leftLeg, darkOutlinePaint);
+
+    // Right Leg
+    final rightLeg = Path()
+      ..moveTo(w * 0.29, h * 0.58)
+      ..lineTo(w * 0.31, h * 0.78)
+      ..lineTo(w * 0.34, h * 0.78)
+      ..lineTo(w * 0.32, h * 0.58)
+      ..close();
+    canvas.drawPath(rightLeg, whitePaint);
+    canvas.drawPath(rightLeg, darkOutlinePaint);
+
+    // Left Shoe
+    final leftShoe = Path()
+      ..moveTo(w * 0.20, h * 0.78)
+      ..quadraticBezierTo(w * 0.16, h * 0.79, w * 0.17, h * 0.81)
+      ..lineTo(w * 0.23, h * 0.81)
+      ..close();
+    canvas.drawPath(leftShoe, darkPaint);
+    canvas.drawPath(leftShoe, darkOutlinePaint);
+
+    // Right Shoe
+    final rightShoe = Path()
+      ..moveTo(w * 0.31, h * 0.78)
+      ..quadraticBezierTo(w * 0.35, h * 0.79, w * 0.34, h * 0.81)
+      ..lineTo(w * 0.30, h * 0.81)
+      ..close();
+    canvas.drawPath(rightShoe, darkPaint);
+    canvas.drawPath(rightShoe, darkOutlinePaint);
+
+    // Torso (Shirt) with breathing breathe offset
+    final torsoPath = Path()
+      ..moveTo(w * 0.24, h * 0.40 + breathe)
+      ..lineTo(w * 0.32, h * 0.40 + breathe)
+      ..lineTo(w * 0.32, h * 0.58)
+      ..lineTo(w * 0.24, h * 0.58)
+      ..close();
+    canvas.drawPath(torsoPath, redPaint);
+    canvas.drawPath(torsoPath, darkOutlinePaint);
+
+    // Neck
+    canvas.drawRect(Rect.fromLTWH(w * 0.27, h * 0.36 + breathe, w * 0.02, h * 0.04), skinPaint);
+    canvas.drawRect(Rect.fromLTWH(w * 0.27, h * 0.36 + breathe, w * 0.02, h * 0.04), darkOutlinePaint);
+
+    // Head (Oval)
+    canvas.drawOval(Rect.fromLTWH(w * 0.26, h * 0.28 + breathe, w * 0.045, h * 0.08), skinPaint);
+    canvas.drawOval(Rect.fromLTWH(w * 0.26, h * 0.28 + breathe, w * 0.045, h * 0.08), darkOutlinePaint);
+
+    // Curly Hair (overlapped circles just like the reference photo)
+    final hairPaint = Paint()..color = const Color(0xFF0F172A);
+    canvas.drawCircle(Offset(w * 0.28, h * 0.275 + breathe), 11, hairPaint);
+    canvas.drawCircle(Offset(w * 0.265, h * 0.29 + breathe), 9, hairPaint);
+    canvas.drawCircle(Offset(w * 0.288, h * 0.268 + breathe), 10, hairPaint);
+    canvas.drawCircle(Offset(w * 0.27, h * 0.26 + breathe), 9, hairPaint);
+
+    // Arm (Raised, holding smartphone)
+    final armPath = Path()
+      ..moveTo(w * 0.31, h * 0.42 + breathe)
+      ..quadraticBezierTo(w * 0.40, h * 0.42 + breathe, w * 0.42, h * 0.38 + breathe) // Shoulder to hand
+      ..lineTo(w * 0.41, h * 0.36 + breathe)
+      ..quadraticBezierTo(w * 0.39, h * 0.40 + breathe, w * 0.31, h * 0.40 + breathe)
+      ..close();
+    canvas.drawPath(armPath, skinPaint);
+    canvas.drawPath(armPath, darkOutlinePaint);
+
+    // Smartphone
+    final phoneRect = Rect.fromLTWH(w * 0.42, h * 0.34 + breathe, w * 0.02, h * 0.06);
+    final phoneRRect = RRect.fromRectAndRadius(phoneRect, const Radius.circular(3));
+    canvas.drawRRect(phoneRRect, tealPaint);
+    canvas.drawRRect(phoneRRect, darkOutlinePaint);
+
+    // ── 4. ANIMATED SCANNING CONE & LASER ──
+    final scanCone = Path()
+      ..moveTo(w * 0.43, h * 0.37 + breathe) // Vertex from phone screen
+      ..lineTo(w * 0.28, h * 0.25 + breathe) // Upper bound to head
+      ..lineTo(w * 0.28, h * 0.42 + breathe) // Lower bound to chest
+      ..close();
+    
+    final coneGradient = LinearGradient(
+      colors: [
+        const Color(0xFF2DD4BF).withOpacity(0.20),
+        const Color(0xFF2DD4BF).withOpacity(0.01),
+      ],
+      begin: Alignment.centerRight,
+      end: Alignment.centerLeft,
+    );
+
+    final conePaint = Paint()
+      ..shader = coneGradient.createShader(Rect.fromLTWH(w * 0.28, h * 0.25 + breathe, w * 0.15, h * 0.17))
+      ..style = PaintingStyle.fill;
+    canvas.drawPath(scanCone, conePaint);
+
+    // Horizontal scanning laser line moving up and down the face
+    double laserY = h * 0.28 + breathe + (h * 0.12 * animationValue);
+    final laserPaint = Paint()
+      ..color = const Color(0xFF2DD4BF)
+      ..strokeWidth = 2.0
+      ..shadowColor = const Color(0xFF2DD4BF).withOpacity(0.8);
+    canvas.drawLine(Offset(w * 0.275, laserY), Offset(w * 0.325, laserY), laserPaint);
+
+    // ── 5. FLORA / FOLIAGE (Teal / Red leaves matching reference) ──
+    // Bottom Left Leaves
+    final leafPaint1 = Paint()..color = const Color(0xFFEF4444);
+    final leafPaint2 = Paint()..color = const Color(0xFFEF4444).withOpacity(0.7);
+
+    // Draw Left Plant
+    final leaf1 = Path()
+      ..moveTo(w * 0.08, h * 0.8)
+      ..quadraticBezierTo(w * 0.05, h * 0.68, w * 0.11, h * 0.68)
+      ..quadraticBezierTo(w * 0.14, h * 0.74, w * 0.11, h * 0.8)
+      ..close();
+    canvas.drawPath(leaf1, leafPaint1);
+    canvas.drawPath(leaf1, darkOutlinePaint);
+
+    final leaf2 = Path()
+      ..moveTo(w * 0.11, h * 0.8)
+      ..quadraticBezierTo(w * 0.15, h * 0.70, w * 0.18, h * 0.73)
+      ..quadraticBezierTo(w * 0.16, h * 0.78, w * 0.13, h * 0.8)
+      ..close();
+    canvas.drawPath(leaf2, leafPaint2);
+    canvas.drawPath(leaf2, darkOutlinePaint);
+
+    // Bottom Right Plants (Red foliage like in the reference)
+    final rLeaf1 = Path()
+      ..moveTo(w * 0.84, h * 0.8)
+      ..quadraticBezierTo(w * 0.81, h * 0.62, w * 0.87, h * 0.60)
+      ..quadraticBezierTo(w * 0.90, h * 0.70, w * 0.87, h * 0.8)
+      ..close();
+    canvas.drawPath(rLeaf1, leafPaint1);
+    canvas.drawPath(rLeaf1, darkOutlinePaint);
+
+    final rLeaf2 = Path()
+      ..moveTo(w * 0.88, h * 0.8)
+      ..quadraticBezierTo(w * 0.94, h * 0.66, w * 0.91, h * 0.64)
+      ..quadraticBezierTo(w * 0.88, h * 0.74, w * 0.88, h * 0.8)
+      ..close();
+    canvas.drawPath(rLeaf2, leafPaint2);
+    canvas.drawPath(rLeaf2, darkOutlinePaint);
+
+    // Faint circular ground base
+    final groundPaint = Paint()
+      ..color = const Color(0xFFF1F5F9).withOpacity(0.05)
+      ..style = PaintingStyle.fill;
+    canvas.drawOval(Rect.fromLTWH(w * 0.08, h * 0.78, w * 0.84, h * 0.04), groundPaint);
+    canvas.drawOval(Rect.fromLTWH(w * 0.08, h * 0.78, w * 0.84, h * 0.04), outlinePaint);
+  }
+
+  @override
+  bool shouldRepaint(_CartoonScanPainter oldDelegate) {
+    return oldDelegate.animationValue != animationValue;
+  }
 }
