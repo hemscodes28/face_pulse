@@ -70,26 +70,54 @@ class ResultsScreen extends StatelessWidget {
                   Text('Health Check Results', style: GoogleFonts.hankenGrotesk(fontSize: 28, fontWeight: FontWeight.w700, color: const Color(0xFF111827))),
                   const SizedBox(height: 12),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(color: const Color(0xFFFEF2F2), borderRadius: BorderRadius.circular(20), border: Border.all(color: const Color(0xFFFECACA))),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: metrics.qualityStars >= 4
+                          ? const Color(0xFFF0FDF4)
+                          : (metrics.qualityStars >= 3 ? const Color(0xFFFFFBEB) : const Color(0xFFFEF2F2)),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: metrics.qualityStars >= 4
+                            ? const Color(0xFFBBF7D0)
+                            : (metrics.qualityStars >= 3 ? const Color(0xFFFDE68A) : const Color(0xFFFECACA)),
+                      ),
+                    ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.star, color: Colors.red, size: 16),
-                        ...List.generate(4, (_) => const Icon(Icons.star, color: Color(0xFFE5E7EB), size: 16)),
-                        const SizedBox(width: 6),
-                        Text('Low - rescan recommended', style: GoogleFonts.hankenGrotesk(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.red)),
+                        ...List.generate(5, (index) => Icon(
+                          Icons.star,
+                          color: index < metrics.qualityStars
+                              ? (metrics.qualityStars >= 4
+                                  ? Colors.green
+                                  : (metrics.qualityStars >= 3 ? Colors.amber : Colors.red))
+                              : const Color(0xFFE5E7EB),
+                          size: 18,
+                        )),
+                        const SizedBox(width: 8),
+                        Text(
+                          metrics.qualityLabel,
+                          style: GoogleFonts.hankenGrotesk(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: metrics.qualityStars >= 4
+                                ? Colors.green.shade800
+                                : (metrics.qualityStars >= 3 ? Colors.amber.shade900 : Colors.red.shade800),
+                          ),
+                        ),
                       ],
                     ),
                   ),
                   const SizedBox(height: 24),
                   _ResultCard(
-                    title: 'Pulse (HR)', subtitle: 'Average heartbeats per minute.',
+                    title: 'Pulse (HR)', subtitle: 'Average heartbeats per minute during scan.',
                     iconBg: const Color(0xFFFEF2F2), icon: Icons.favorite, iconColor: Colors.red,
                     child: Column(children: [
-                      _BigValue(value: '${metrics.pulse}', unit: 'bpm'),
+                      _BigValue(value: metrics.avgBpm.toStringAsFixed(1), unit: 'bpm (avg)'),
+                      const SizedBox(height: 4),
+                      Text('Samples recorded: ${metrics.samplesCount}', style: GoogleFonts.hankenGrotesk(fontSize: 12, fontWeight: FontWeight.w500, color: const Color(0xFF6B7280))),
                       const SizedBox(height: 12),
-                      _Gauge(value: (metrics.pulse - 30) / 210, labels: const ['30', '60', '100', '240']),
+                      _Gauge(value: (metrics.avgBpm - 30) / 210, labels: const ['30', '60', '100', '240']),
                     ]),
                   ),
                   const SizedBox(height: 16),

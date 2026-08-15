@@ -14,10 +14,21 @@ enum ScanState { idle, scanning, completed }
 class MeasurementMetrics {
   final int pulse, sys, dia, hrv, breath, workload, para;
   final double stress, bmi;
+  final double avgBpm;
+  final double luminanceVariance;
+  final int qualityStars;
+  final String qualityLabel;
+  final int samplesCount;
+
   const MeasurementMetrics({
     required this.pulse, required this.sys, required this.dia,
     required this.hrv, required this.breath, required this.workload,
     required this.para, required this.stress, required this.bmi,
+    required this.avgBpm,
+    required this.luminanceVariance,
+    required this.qualityStars,
+    required this.qualityLabel,
+    required this.samplesCount,
   });
 }
 
@@ -42,6 +53,8 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
   double? _realBackendSnr;
   double? _realBackendLuminance;
   bool _hasRealBpm = false;
+  final List<double> _bpmHistory = [];
+  final List<double> _luminanceHistory = [];
   
   late AnimationController _scanlineCtrl;
   late AnimationController _bracketCtrl;
@@ -164,6 +177,8 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
       _realBackendBpm = null;
       _realBackendSnr = null;
       _realBackendLuminance = null;
+      _bpmHistory.clear();
+      _luminanceHistory.clear();
       _pulseVal = 'warming up...';
       _bpVal = '-- / --';
       _adviceIndex = 0;
@@ -220,10 +235,15 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
                 _hasRealBpm = true;
                 _targetHeartRate = bpm;
                 _pulseVal = bpm.round().toString();
+                _bpmHistory.add(bpm);
                 
                 int sys = 110 + (bpm * 0.1).round();
                 int dia = 70 + (bpm * 0.05).round();
                 _bpVal = '$sys / $dia';
+              }
+              if (snap['luminance'] != null) {
+                double lum = (snap['luminance'] as num).toDouble();
+                _luminanceHistory.add(lum);
               }
             });
           }
@@ -267,6 +287,8 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
       _timeLeft = 60;
       _hasRealBpm = false;
       _realBackendBpm = null;
+      _bpmHistory.clear();
+      _luminanceHistory.clear();
       _pulseVal = '--';
       _bpVal = '-- / --';
     });
@@ -361,15 +383,53 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
   }
 
   void _viewResults() {
-    int finalPulse = _realBackendBpm != null ? _realBackendBpm!.round() : 75;
+    // 1. Calculate Average BPM from collected backend samples
+    double calculatedAvgBpm = _bpmHistory.isNotEmpty
+        ? _bpmHistory.reduce((a, b) => a + b) / _bpmHistory.length
+        : (_realBackendBpm ?? 72.0);
+
+    int finalPulse = calculatedAvgBpm.round();
     int finalSys = 110 + (finalPulse * 0.1).round();
     int finalDia = 70 + (finalPulse * 0.05).round();
 
+    // 2. Calculate Luminance Variance and Video Quality Star Rating
+    double meanLum = 120.0;
+    double stdDevLum = 0.0;
+    if (_luminanceHistory.isNotEmpty) {
+      meanLum = _luminanceHistory.reduce((a, b) => a + b) / _luminanceHistory.length;
+      double sumSq = _luminanceHistory.map((l) => (l - meanLum) * (l - meanLum)).reduce((a, b) => a + b);
+      stdDevLum = math.sqrt(sumSq / _luminanceHistory.length);
+    }
+
+    int qualityStars = 5;
+    String qualityLabel = 'Good Video Quality - Optimal Illumination';
+
+    if (meanLum < 45.0 || meanLum > 215.0 || stdDevLum > 25.0) {
+      qualityStars = 1;
+      qualityLabel = 'Poor Video Quality - High Lighting Variance';
+    } else if (stdDevLum > 10.0) {
+      qualityStars = 3;
+      qualityLabel = 'Normal Video Quality - Moderate Lighting Variance';
+    } else {
+      qualityStars = 5;
+      qualityLabel = 'Good Video Quality - Optimal Illumination';
+    }
+
     widget.onScanComplete(MeasurementMetrics(
-      pulse: finalPulse, sys: finalSys, dia: finalDia,
-      hrv: 45, breath: 16,
-      stress: 1.5, workload: 135,
-      para: 30, bmi: 22.0,
+      pulse: finalPulse,
+      sys: finalSys,
+      dia: finalDia,
+      hrv: 45,
+      breath: 16,
+      stress: 1.5,
+      workload: 135,
+      para: 30,
+      bmi: 22.0,
+      avgBpm: calculatedAvgBpm,
+      luminanceVariance: stdDevLum,
+      qualityStars: qualityStars,
+      qualityLabel: qualityLabel,
+      samplesCount: _bpmHistory.length,
     ));
   }
 
