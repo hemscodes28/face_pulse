@@ -73,6 +73,8 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
   bool _hasRealBpm = false;
   final List<double> _bpmHistory = [];
   final List<double> _luminanceHistory = [];
+  int _totalPollsCount = 0;
+  int _faceLostCount = 0;
   
   late AnimationController _scanlineCtrl;
   late AnimationController _bracketCtrl;
@@ -197,6 +199,8 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
       _realBackendLuminance = null;
       _bpmHistory.clear();
       _luminanceHistory.clear();
+      _totalPollsCount = 0;
+      _faceLostCount = 0;
       _pulseVal = 'warming up...';
       _bpVal = '-- / --';
       _adviceIndex = 0;
@@ -245,6 +249,12 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
           final snap = jsonDecode(res.body);
           if (mounted && _state == ScanState.scanning) {
             setState(() {
+              _totalPollsCount++;
+              String statusStr = snap['status']?.toString() ?? '';
+              if (statusStr.contains('NO_FACE') || statusStr.contains('MISALIGNED')) {
+                _faceLostCount++;
+              }
+
               if (snap['bpm'] != null) {
                 double bpm = (snap['bpm'] as num).toDouble();
                 _realBackendBpm = bpm;
@@ -307,6 +317,8 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
       _realBackendBpm = null;
       _bpmHistory.clear();
       _luminanceHistory.clear();
+      _totalPollsCount = 0;
+      _faceLostCount = 0;
       _pulseVal = '--';
       _bpVal = '-- / --';
     });
@@ -444,24 +456,57 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
     double baseSpo2 = 98.6 - (stdDevLum > 15.0 ? 1.2 : 0.4);
     double calculatedSpo2 = baseSpo2.clamp(94.0, 99.0);
 
-    // 6. Calculate Stress Index & Parasympathetic Activity
+    // 6. Comprehensive Multi-Factor Video Quality Assessment:
+    //    Factor A: Luminance Variance & Lighting Level
+    //    Factor B: Face Detection Loss Ratio
+    //    Factor C: Valid Reference Frames Count
+    int qualityScore = 5;
+    double faceLostRatio = _totalPollsCount > 0 ? (_faceLostCount / _totalPollsCount) : 0.0;
+    int validSamples = _bpmHistory.length;
+
+    bool extremeLight = meanLum < 45.0 || meanLum > 215.0;
+    if (extremeLight || stdDevLum > 25.0) {
+      qualityScore -= 3;
+    } else if (stdDevLum > 12.0) {
+      qualityScore -= 1;
+    }
+
+    if (faceLostRatio > 0.40) {
+      qualityScore -= 2;
+    } else if (faceLostRatio > 0.20) {
+      qualityScore -= 1;
+    }
+
+    if (validSamples < 20) {
+      qualityScore -= 2;
+    } else if (validSamples < 35) {
+      qualityScore -= 1;
+    }
+
+    int qualityStars = qualityScore.clamp(1, 5);
+    String qualityLabel = 'Excellent Video Quality - Optimal Illumination & Tracking';
+
+    if (qualityStars == 1) {
+      if (extremeLight || stdDevLum > 25.0) {
+        qualityLabel = 'Poor Video Quality - High Lighting Variance';
+      } else if (faceLostRatio > 0.40) {
+        qualityLabel = 'Poor Video Quality - Face Not Detected Frequently';
+      } else {
+        qualityLabel = 'Poor Video Quality - Low Reference Frames Count';
+      }
+    } else if (qualityStars == 2) {
+      qualityLabel = 'Fair Video Quality - Frequent Motion / Light Shifts';
+    } else if (qualityStars == 3) {
+      qualityLabel = 'Normal Video Quality - Slight Variations';
+    } else if (qualityStars == 4) {
+      qualityLabel = 'Very Good Video Quality - Stable Frame Tracking';
+    } else {
+      qualityLabel = 'Excellent Video Quality - Optimal Illumination & Tracking';
+    }
+
     double calculatedStress = (100.0 / calculatedHrv * 2.0).clamp(0.5, 9.5);
     int calculatedPara = (calculatedHrv * 0.65).round().clamp(15, 85);
     int calculatedWorkload = (calculatedAvgBpm * finalSys / 60.0).round().clamp(80, 250);
-
-    int qualityStars = 5;
-    String qualityLabel = 'Good Video Quality - Optimal Illumination';
-
-    if (meanLum < 45.0 || meanLum > 215.0 || stdDevLum > 25.0) {
-      qualityStars = 1;
-      qualityLabel = 'Poor Video Quality - High Lighting Variance';
-    } else if (stdDevLum > 10.0) {
-      qualityStars = 3;
-      qualityLabel = 'Normal Video Quality - Moderate Lighting Variance';
-    } else {
-      qualityStars = 5;
-      qualityLabel = 'Good Video Quality - Optimal Illumination';
-    }
 
     widget.onScanComplete(MeasurementMetrics(
       pulse: finalPulse,
