@@ -3,8 +3,10 @@ import json
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, WebSocket, HTTPException, Request, status
-from sse_starlette.sse import EventSourceResponse
+try:
+    from sse_starlette.sse import EventSourceResponse
+except Exception:
+    EventSourceResponse = None
 
 from app.schemas.measurement_schema import (
     MeasurementStartRequest,

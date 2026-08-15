@@ -40,9 +40,15 @@ if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
 # These imports resolve from the project root.
-from rppg_processor import RPPGSignalProcessor           # noqa: E402
-from schemas import QualityStatus                        # noqa: E402
-from face_feature_extractor import FaceFeatureExtractor  # noqa: E402
+try:
+    from rppg_processor import RPPGSignalProcessor           # noqa: E402
+    from schemas import QualityStatus                        # noqa: E402
+    from face_feature_extractor import FaceFeatureExtractor  # noqa: E402
+except Exception as _err:
+    logger.warning(f"Heavy computer vision dependencies not loaded: {_err}")
+    RPPGSignalProcessor = None
+    QualityStatus = None
+    FaceFeatureExtractor = None
 
 from app.services.measurement_runtime import runtime     # noqa: E402
 
