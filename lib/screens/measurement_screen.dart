@@ -274,6 +274,8 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
         );
         if (res.statusCode == 200) {
           final snap = jsonDecode(res.body);
+          debugPrint("📥 [UI RECEIVED SNAPSHOT] frame=${snap['frame']} status=${snap['status']} bpm=${snap['bpm']} lum=${snap['luminance']} snr=${snap['snr']}");
+          
           if (mounted && _state == ScanState.scanning) {
             setState(() {
               _totalPollsCount++;
