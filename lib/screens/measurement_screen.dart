@@ -30,7 +30,7 @@ class MeasurementScreen extends StatefulWidget {
 
 class _MeasurementScreenState extends State<MeasurementScreen> with TickerProviderStateMixin {
   ScanState _state = ScanState.idle;
-  int _timeLeft = 30;
+  int _timeLeft = 60;
   String _pulseVal = '--';
   String _bpVal = '-- / --';
   Timer? _timer, _simTimer, _adviceTimer, _pollTimer;
@@ -157,7 +157,7 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
   Future<void> _startScan() async {
     setState(() {
       _state = ScanState.scanning;
-      _timeLeft = 30;
+      _timeLeft = 60;
       _currentHeartRate = 70.0;
       _targetHeartRate = 70.0;
       _hasRealBpm = false;
@@ -264,7 +264,7 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
     _sendBackendStop();
     setState(() {
       _state = ScanState.idle;
-      _timeLeft = 30;
+      _timeLeft = 60;
       _hasRealBpm = false;
       _realBackendBpm = null;
       _pulseVal = '--';
