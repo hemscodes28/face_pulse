@@ -42,7 +42,7 @@ class FaceFeatureExtractor:
     MAX_ROLL: float = 20.0        # Maximum allowed roll angle in degrees (+/-)
 
     # Calibrated Alignment & Coverage Gate Thresholds
-    MIN_COVERAGE_RATIO: float = 0.08  # Minimum face bbox area / frame area
+    MIN_COVERAGE_RATIO: float = 0.03  # Minimum face bbox area / frame area (calibrated for standard desk sitting distance)
     MAX_COVERAGE_RATIO: float = 0.70  # Maximum face bbox area / frame area
     MAX_CENTER_OFFSET_X: float = 0.30 # Maximum allowed horizontal center offset (+/- 30% of frame width)
     MAX_CENTER_OFFSET_Y: float = 0.30 # Maximum allowed vertical center offset (+/- 30% of frame height)

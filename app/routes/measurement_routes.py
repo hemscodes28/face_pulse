@@ -185,17 +185,11 @@ def debugger_latest(measurement_id: str):
 
     During the first ~6 seconds (180-frame warmup), BPM/SNR/luminance are
     null and status is 'WAITING'.  After warmup, real values are returned.
-
-    If the measurement_id does not match the active session, returns 404.
     """
     snap = runtime.snapshot()
 
-    if snap["measurement_id"] != measurement_id:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No active session for measurement_id={measurement_id}. "
-                   "Call POST /api/v1/measurements/start first."
-        )
+    # If runtime is active but has a new measurement_id, return active snapshot
+    active_id = snap["measurement_id"] or measurement_id
 
     # During warmup (bpm still None), report WAITING status
     effective_status = snap["status"] or "WAITING"
@@ -203,7 +197,7 @@ def debugger_latest(measurement_id: str):
         effective_status = "WAITING"
 
     return DebuggerLatestResult(
-        measurement_id=measurement_id,
+        measurement_id=active_id,
         frame=snap["frame"],
         status=effective_status,
         bpm=snap["bpm"],
