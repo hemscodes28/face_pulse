@@ -188,6 +188,7 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
   }
 
   Future<void> _startScan() async {
+    debugPrint("🚀 [UI ACTION] START SCAN BUTTON PRESSED!");
     setState(() {
       _state = ScanState.scanning;
       _timeLeft = 60;
@@ -206,19 +207,43 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
       _adviceIndex = 0;
     });
 
-    // 1. Call Backend API to start visual debugger pipeline
-    try {
-      final res = await http.post(
-        Uri.parse('$_backendBaseUrl/start'),
-        headers: {'Content-Type': 'application/json'},
-      );
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        _activeMeasurementId = data['measurement_id'];
-        debugPrint("Started visual debugger session: $_activeMeasurementId");
+    // 1. Call Backend API to start visual debugger pipeline with host fallback
+    List<String> hostCandidates = [
+      'http://127.0.0.1:8000/api/v1/measurements',
+      'http://10.0.2.2:8000/api/v1/measurements',
+      'http://localhost:8000/api/v1/measurements',
+    ];
+
+    String activeBaseUrl = _backendBaseUrl;
+    for (final baseUrl in hostCandidates) {
+      try {
+        debugPrint("🔗 Attempting backend camera start at $baseUrl/start...");
+        final res = await http.post(
+          Uri.parse('$baseUrl/start'),
+          headers: {'Content-Type': 'application/json'},
+        ).timeout(const Duration(seconds: 3));
+
+        if (res.statusCode == 200) {
+          final data = jsonDecode(res.body);
+          _activeMeasurementId = data['measurement_id'];
+          activeBaseUrl = baseUrl;
+          debugPrint("✅ Camera Session Started! ID: $_activeMeasurementId at $activeBaseUrl");
+          started = true;
+          break;
+        }
+      } catch (e) {
+        debugPrint("⚠️ Backend candidate $baseUrl unreachable: $e");
       }
-    } catch (e) {
-      debugPrint("Error calling backend start endpoint: $e");
+    }
+
+    if (!started && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Backend server on port 8000 unreachable. Starting fallback simulation..."),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 2),
+        ),
+      );
     }
 
     // 2. Local countdown timer
@@ -243,7 +268,7 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
       if (_activeMeasurementId == null || !mounted) return;
       try {
         final res = await http.get(
-          Uri.parse('$_backendBaseUrl/$_activeMeasurementId/latest'),
+          Uri.parse('$activeBaseUrl/$_activeMeasurementId/latest'),
         );
         if (res.statusCode == 200) {
           final snap = jsonDecode(res.body);
