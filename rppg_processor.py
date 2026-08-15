@@ -31,7 +31,7 @@ class RPPGSignalProcessor:
         high_cutoff: float = 3.0,
         filter_order: int = 4,
         snr_half_bandwidth: float = 0.15,
-        min_samples_for_dsp: int = 180,  # 180 samples (6 seconds @ 30 FPS)
+        min_samples_for_dsp: int = 90,   # 90 samples (3 seconds @ 30 FPS for fast BPM computation)
         ema_alpha: float = 0.10,         # 0.10 * target_bpm + 0.90 * smoothed_bpm
         max_bpm_delta: float = 12.0,      # Delta clamp threshold for velocity limiter
         max_step_per_frame: float = 2.0, # Maximum BPM delta step per frame update
@@ -151,7 +151,7 @@ class RPPGSignalProcessor:
             self._g_buffer.pop(0)
             self._b_buffer.pop(0)
 
-        # 1. Hard Buffer Guard: If buffer has fewer than 180 valid frames (~6s), return BPM = 0.0 and SNR = 0.0 immediately
+        # 1. Hard Buffer Guard: If buffer has fewer than min_samples_for_dsp valid frames (~3s), return BPM = 0.0 and SNR = 0.0 during warmup
         if len(self._r_buffer) < self.min_samples_for_dsp:
             return ProcessedRPPGMetrics(
                 timestamp=timestamp,

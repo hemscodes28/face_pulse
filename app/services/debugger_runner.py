@@ -200,6 +200,11 @@ class DebuggerThread(threading.Thread):
                     snr=snr_val,
                 )
 
+                if bpm_val is not None:
+                    logger.info(
+                        f"[rPPG PULSE ENGINE] Frame #{frame_idx}: Live Heart Rate = {bpm_val:.1f} BPM | SNR = {snr_val:+.1f} dB | Luminance = {luminance:.1f} Y | Status: {status_str}"
+                    )
+
                 # ── Optional display ──────────────────────────────────────────
                 if not self.headless:
                     try:
