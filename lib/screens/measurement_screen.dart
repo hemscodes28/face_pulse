@@ -24,12 +24,12 @@ class MeasurementMetrics {
     required this.pulse, required this.sys, required this.dia,
     required this.hrv, required this.breath, required this.workload,
     required this.para, required this.stress, required this.bmi,
-    required this.avgBpm,
-    required this.luminanceVariance,
-    required this.qualityStars,
-    required this.qualityLabel,
-    required this.samplesCount,
-  });
+    double? avgBpm,
+    this.luminanceVariance = 0.0,
+    this.qualityStars = 5,
+    this.qualityLabel = 'Good Video Quality - Optimal Illumination',
+    this.samplesCount = 30,
+  }) : avgBpm = avgBpm ?? pulse.toDouble();
 }
 
 class MeasurementScreen extends StatefulWidget {
