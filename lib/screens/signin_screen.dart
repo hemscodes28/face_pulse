@@ -21,8 +21,8 @@ class SignInScreen extends StatefulWidget {
 
 class _SignInScreenState extends State<SignInScreen> with TickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
+  final _emailController = TextEditingController(text: 'hemkumarr2803@gmail.com');
+  final _passwordController = TextEditingController(text: 'hem@1234');
 
   bool _showPassword = false;
   bool _isLoading = false;
