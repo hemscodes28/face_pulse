@@ -36,6 +36,12 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
   Timer? _timer, _simTimer, _adviceTimer, _pollTimer;
   String? _activeMeasurementId;
   static const String _backendBaseUrl = 'http://127.0.0.1:8000/api/v1/measurements';
+
+  // Real Backend Data State
+  double? _realBackendBpm;
+  double? _realBackendSnr;
+  double? _realBackendLuminance;
+  bool _hasRealBpm = false;
   
   late AnimationController _scanlineCtrl;
   late AnimationController _bracketCtrl;
@@ -154,6 +160,10 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
       _timeLeft = 30;
       _currentHeartRate = 70.0;
       _targetHeartRate = 70.0;
+      _hasRealBpm = false;
+      _realBackendBpm = null;
+      _realBackendSnr = null;
+      _realBackendLuminance = null;
       _pulseVal = 'warming up...';
       _bpVal = '-- / --';
       _adviceIndex = 0;
@@ -204,6 +214,10 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
             setState(() {
               if (snap['bpm'] != null) {
                 double bpm = (snap['bpm'] as num).toDouble();
+                _realBackendBpm = bpm;
+                _realBackendSnr = (snap['snr'] as num?)?.toDouble();
+                _realBackendLuminance = (snap['luminance'] as num?)?.toDouble();
+                _hasRealBpm = true;
                 _targetHeartRate = bpm;
                 _pulseVal = bpm.round().toString();
                 
@@ -251,6 +265,8 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
     setState(() {
       _state = ScanState.idle;
       _timeLeft = 30;
+      _hasRealBpm = false;
+      _realBackendBpm = null;
       _pulseVal = '--';
       _bpVal = '-- / --';
     });
@@ -267,22 +283,19 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
     double finalVal = _baselineWander;
 
     if (_state == ScanState.scanning) {
-      // 2. Gently drift current heart rate towards target heart rate
-      if ((_currentHeartRate - _targetHeartRate).abs() < 0.5) {
-        // Pick a new random target heart rate between 60 and 80 bpm
-        _targetHeartRate = 60.0 + _random.nextDouble() * 20.0;
+      if (_hasRealBpm && _realBackendBpm != null) {
+        // Smoothly interpolate current heart rate towards real backend BPM
+        _targetHeartRate = _realBackendBpm!;
+        _currentHeartRate += (_targetHeartRate - _currentHeartRate) * 0.05;
+        _pulseVal = _realBackendBpm!.round().toString();
       } else {
-        // Smooth interpolation
-        _currentHeartRate += (_targetHeartRate - _currentHeartRate) * 0.03;
+        _pulseVal = 'warming up...';
       }
 
-      // Update real-time pulse value display to match current heart rate
-      _pulseVal = _currentHeartRate.round().toString();
-
-      // Update blood pressure to follow heart rate realistically with slight noise
-      if (_random.nextInt(25) == 0) { // update BP roughly once per second
-        int sys = 110 + (_currentHeartRate * 0.1).round() + _random.nextInt(6);
-        int dia = 70 + (_currentHeartRate * 0.05).round() + _random.nextInt(4);
+      // Update blood pressure to follow heart rate realistically
+      if (_random.nextInt(25) == 0 && _hasRealBpm && _realBackendBpm != null) {
+        int sys = 110 + (_realBackendBpm! * 0.1).round() + _random.nextInt(3);
+        int dia = 70 + (_realBackendBpm! * 0.05).round() + _random.nextInt(2);
         _bpVal = '$sys / $dia';
       }
 
@@ -348,12 +361,15 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
   }
 
   void _viewResults() {
-    final r = DateTime.now().millisecondsSinceEpoch;
+    int finalPulse = _realBackendBpm != null ? _realBackendBpm!.round() : 75;
+    int finalSys = 110 + (finalPulse * 0.1).round();
+    int finalDia = 70 + (finalPulse * 0.05).round();
+
     widget.onScanComplete(MeasurementMetrics(
-      pulse: 72 + (r % 8), sys: 114 + (r % 10), dia: 72 + (r % 6),
-      hrv: 42 + (r % 12), breath: 21 + (r % 4),
-      stress: 1.6 + (r % 8) * 0.1, workload: 138 + (r % 20),
-      para: 28 + (r % 8), bmi: 21.7,
+      pulse: finalPulse, sys: finalSys, dia: finalDia,
+      hrv: 45, breath: 16,
+      stress: 1.5, workload: 135,
+      para: 30, bmi: 22.0,
     ));
   }
 
