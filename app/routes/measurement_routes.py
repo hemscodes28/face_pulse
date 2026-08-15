@@ -5,10 +5,7 @@ from typing import Optional
 
 from fastapi import APIRouter, WebSocket, HTTPException, Request, status
 
-try:
-    from sse_starlette.sse import EventSourceResponse
-except Exception:
-    EventSourceResponse = None
+from sse_starlette.sse import EventSourceResponse
 
 from app.schemas.measurement_schema import (
     MeasurementStartRequest,
