@@ -508,6 +508,27 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
     int calculatedPara = (calculatedHrv * 0.65).round().clamp(15, 85);
     int calculatedWorkload = (calculatedAvgBpm * finalSys / 60.0).round().clamp(80, 250);
 
+    try {
+      http.post(
+        Uri.parse('$_backendBaseUrl/diary/entry'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'user_id': 'user_default',
+          'heart_rate': calculatedAvgBpm,
+          'spo2': calculatedSpo2,
+          'systolic': finalSys,
+          'diastolic': finalDia,
+          'hrv': calculatedHrv,
+          'breath': calculatedBreath,
+          'respiratory_health': respHealth,
+          'quality_stars': qualityStars,
+          'quality_label': qualityLabel,
+        }),
+      );
+    } catch (e) {
+      debugPrint("Error persisting scan to backend DB: $e");
+    }
+
     widget.onScanComplete(MeasurementMetrics(
       pulse: finalPulse,
       sys: finalSys,

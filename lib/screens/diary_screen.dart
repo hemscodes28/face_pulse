@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:http/http.dart' as http;
 import '../components/innovative_back_button.dart';
 import '../theme/app_theme.dart';
 import 'measurement_screen.dart'; // To access MeasurementMetrics
@@ -32,12 +34,71 @@ class _DiaryScreenState extends State<DiaryScreen> {
   String _timePeriod = 'Week'; // 'Week' or 'Month'
 
   late DateTime _currentCalendarMonth;
+  List<MeasurementMetrics> _dbScanHistory = [];
+  bool _isLoadingHistory = true;
+  static const String _backendBaseUrl = 'http://127.0.0.1:8000/api/v1/diary';
 
   @override
   void initState() {
     super.initState();
     final now = DateTime.now();
     _currentCalendarMonth = DateTime(now.year, now.month, 1);
+    _fetchDbDiaryHistory();
+  }
+
+  Future<void> _fetchDbDiaryHistory() async {
+    try {
+      final res = await http.get(Uri.parse('$_backendBaseUrl/history?user_id=user_default'));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        final List measurements = data['measurements'] ?? [];
+        final List<MeasurementMetrics> fetched = [];
+        for (final m in measurements) {
+          double bpm = (m['heart_rate'] as num?)?.toDouble() ?? 72.0;
+          double spo2 = (m['spo2'] as num?)?.toDouble() ?? 98.0;
+          int sys = (m['systolic'] as num?)?.toInt() ?? 120;
+          int dia = (m['diastolic'] as num?)?.toInt() ?? 80;
+          int hrv = (m['hrv'] as num?)?.toInt() ?? 48;
+          int breath = (m['breath'] as num?)?.toInt() ?? 16;
+          int respHealth = (m['respiratory_health'] as num?)?.toInt() ?? 95;
+          int stars = (m['quality_stars'] as num?)?.toInt() ?? 5;
+          String label = m['quality_label'] ?? 'Good Video Quality';
+
+          fetched.add(MeasurementMetrics(
+            pulse: bpm.round(),
+            sys: sys,
+            dia: dia,
+            hrv: hrv,
+            breath: breath,
+            stress: 1.5,
+            workload: 130,
+            para: 30,
+            bmi: 22.0,
+            avgBpm: bpm,
+            qualityStars: stars,
+            qualityLabel: label,
+            spo2: spo2,
+            respiratoryHealth: respHealth,
+          ));
+        }
+        if (mounted && fetched.isNotEmpty) {
+          setState(() {
+            _dbScanHistory = fetched;
+            _isLoadingHistory = false;
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint("Error fetching DB diary history: $e");
+    } finally {
+      if (mounted) setState(() => _isLoadingHistory = false);
+    }
+  }
+
+  List<MeasurementMetrics> get _effectiveHistory {
+    if (_dbScanHistory.isNotEmpty) return _dbScanHistory;
+    if (widget.scanHistory.isNotEmpty) return widget.scanHistory;
+    return [];
   }
 
   // Get month abbreviation name
@@ -61,8 +122,9 @@ class _DiaryScreenState extends State<DiaryScreen> {
 
   // Check if a specific date has any scans in history
   bool _hasScanDataForDate(int year, int month, int day) {
+    final history = _effectiveHistory;
     final now = DateTime.now();
-    for (int i = 0; i < widget.scanHistory.length; i++) {
+    for (int i = 0; i < history.length; i++) {
       DateTime dt;
       if (i == 0) {
         dt = DateTime(now.year, now.month, (now.day - 6).clamp(1, 28));
@@ -71,7 +133,6 @@ class _DiaryScreenState extends State<DiaryScreen> {
       } else if (i == 2) {
         dt = DateTime(now.year, now.month, now.day);
       } else {
-        // Any new user-completed scans default to today's date
         dt = DateTime.now();
       }
       if (dt.year == year && dt.month == month && dt.day == day) {
@@ -83,12 +144,14 @@ class _DiaryScreenState extends State<DiaryScreen> {
 
   // Retrieve the latest scanning output metrics
   MeasurementMetrics get _latestScan {
-    if (widget.scanHistory.isNotEmpty) {
-      return widget.scanHistory.last;
+    final history = _effectiveHistory;
+    if (history.isNotEmpty) {
+      return history.last;
     }
     return const MeasurementMetrics(
       pulse: 75, sys: 117, dia: 74, hrv: 48,
-      breath: 22, stress: 2.0, workload: 145, para: 32, bmi: 21.7,
+      breath: 16, stress: 1.5, workload: 130, para: 30, bmi: 22.0,
+      avgBpm: 75.0, spo2: 98.0, respiratoryHealth: 95,
     );
   }
 
@@ -96,38 +159,31 @@ class _DiaryScreenState extends State<DiaryScreen> {
   List<double> _getTrendValues(String metric, String period) {
     int count = period == 'Week' ? 7 : 30;
     List<double> vals = [];
-    
-    // Seed a random generator with selection params to remain consistent per month/year
-    final rand = math.Random(DateTime.now().month + DateTime.now().year + metric.hashCode);
-    
-    // Add real values from history
-    for (final scan in widget.scanHistory) {
-      if (metric == 'sys') vals.add(scan.sys.toDouble());
-      else if (metric == 'dia') vals.add(scan.dia.toDouble());
-      else if (metric == 'pulse') vals.add(scan.pulse.toDouble());
+    final history = _effectiveHistory;
+
+    for (final scan in history) {
+      if (metric == 'pulse') vals.add(scan.avgBpm);
+      else if (metric == 'hrv') vals.add(scan.hrv.toDouble());
       else if (metric == 'breath') vals.add(scan.breath.toDouble());
-      else if (metric == 'spo2') vals.add(96.0 + (scan.pulse % 5));
+      else if (metric == 'spo2') vals.add(scan.spo2);
+      else if (metric == 'sys') vals.add(scan.sys.toDouble());
+      else if (metric == 'dia') vals.add(scan.dia.toDouble());
     }
-    
-    // Pad remaining items with realistic random values
+
+    if (vals.isEmpty) {
+      vals = [71.0, 75.0, 78.0, 72.0, 74.0];
+    }
+
+    final rand = math.Random(metric.hashCode);
     while (vals.length < count) {
-      if (metric == 'sys') {
-        vals.insert(0, 110.0 + rand.nextInt(15));
-      } else if (metric == 'dia') {
-        vals.insert(0, 68.0 + rand.nextInt(10));
-      } else if (metric == 'pulse') {
-        vals.insert(0, 64.0 + rand.nextInt(16));
-      } else if (metric == 'breath') {
-        vals.insert(0, 16.0 + rand.nextInt(8));
-      } else { // spo2
-        vals.insert(0, 96.0 + rand.nextInt(5));
-      }
+      double base = vals.first;
+      vals.insert(0, (base + (rand.nextDouble() * 4.0 - 2.0)).clamp(50.0, 120.0));
     }
-    
+
     if (vals.length > count) {
       vals = vals.sublist(vals.length - count);
     }
-    
+
     return vals;
   }
 
@@ -388,43 +444,42 @@ class _DiaryScreenState extends State<DiaryScreen> {
                   ),
                   const SizedBox(height: 16),
 
-                  // 6. Dynamic Metric Trend Cards (Linked to Scan Outcomes)
-                  // 1) Blood Pressure Card
+                  // 6. Dynamic Metric Trend Cards (Linked to DB Scan Outcomes)
+                  // 1) Pulse / Heart Rate Card
                   _buildTrendCard(
-                    title: 'BLOOD PRESSURE',
-                    value: '${_latestScan.sys} / ${_latestScan.dia}',
-                    unit: 'mmHg',
-                    status: _latestScan.sys > 120 ? 'Prehypertension' : 'Normal',
-                    statusColor: _latestScan.sys > 120 ? const Color(0xFFEF4444) : const Color(0xFF10B981),
-                    icon: Icons.speed_rounded,
-                    lineColor: const Color(0xFFEF4444),
-                    points: _getTrendValues('sys', _timePeriod),
-                    pointsDiastolic: _getTrendValues('dia', _timePeriod),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // 2) Heart Rate Card
-                  _buildTrendCard(
-                    title: 'HEART RATE',
-                    value: '${_latestScan.pulse}',
+                    title: 'HEART RATE (PULSE)',
+                    value: '${_latestScan.avgBpm.round()}',
                     unit: 'bpm',
                     status: 'Normal',
                     statusColor: const Color(0xFF10B981),
                     icon: Icons.favorite_rounded,
-                    lineColor: const Color(0xFF2DD4BF),
+                    lineColor: const Color(0xFFEF4444),
                     points: _getTrendValues('pulse', _timePeriod),
                   ),
                   const SizedBox(height: 16),
 
-                  // 3) Respiratory Health Card
+                  // 2) HRV Card
                   _buildTrendCard(
-                    title: 'RESPIRATORY HEALTH',
+                    title: 'HEART RATE VARIABILITY (HRV)',
+                    value: '${_latestScan.hrv}',
+                    unit: 'ms',
+                    status: 'Optimal',
+                    statusColor: const Color(0xFF10B981),
+                    icon: Icons.monitor_heart_rounded,
+                    lineColor: const Color(0xFF8B5CF6),
+                    points: _getTrendValues('hrv', _timePeriod),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // 3) Breathing Rate Card
+                  _buildTrendCard(
+                    title: 'BREATHING RATE',
                     value: '${_latestScan.breath}',
-                    unit: 'bpm',
+                    unit: 'br/m',
                     status: 'Healthy',
                     statusColor: const Color(0xFF10B981),
                     icon: Icons.air_rounded,
-                    lineColor: const Color(0xFF8B5CF6),
+                    lineColor: const Color(0xFF3B82F6),
                     points: _getTrendValues('breath', _timePeriod),
                   ),
                   const SizedBox(height: 16),
@@ -432,14 +487,14 @@ class _DiaryScreenState extends State<DiaryScreen> {
                   // 4) SpO2 Oxygen Level Card
                   _buildTrendCard(
                     title: 'OXYGEN SATURATION (SPO2)',
-                    value: '${96 + (_latestScan.pulse % 5)}',
+                    value: _latestScan.spo2.toStringAsFixed(1),
                     unit: '%',
                     status: 'Optimal',
                     statusColor: const Color(0xFF10B981),
                     icon: Icons.opacity_rounded,
                     lineColor: const Color(0xFF10B981),
                     points: _getTrendValues('spo2', _timePeriod),
-                    minVal: 95.0,
+                    minVal: 90.0,
                     maxVal: 100.0,
                   ),
                   const SizedBox(height: 24),
