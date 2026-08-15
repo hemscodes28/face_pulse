@@ -13,6 +13,11 @@ class ResultsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final int stars = metrics.qualityStars;
+    final String label = metrics.qualityLabel;
+    final double displayAvgBpm = metrics.avgBpm;
+    final int samples = metrics.samplesCount;
+
     return Scaffold(
       backgroundColor: const Color(0xFFF9FAFB),
       body: Column(
@@ -72,14 +77,14 @@ class ResultsScreen extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                     decoration: BoxDecoration(
-                      color: metrics.qualityStars >= 4
+                      color: stars >= 4
                           ? const Color(0xFFF0FDF4)
-                          : (metrics.qualityStars >= 3 ? const Color(0xFFFFFBEB) : const Color(0xFFFEF2F2)),
+                          : (stars >= 3 ? const Color(0xFFFFFBEB) : const Color(0xFFFEF2F2)),
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
-                        color: metrics.qualityStars >= 4
+                        color: stars >= 4
                             ? const Color(0xFFBBF7D0)
-                            : (metrics.qualityStars >= 3 ? const Color(0xFFFDE68A) : const Color(0xFFFECACA)),
+                            : (stars >= 3 ? const Color(0xFFFDE68A) : const Color(0xFFFECACA)),
                       ),
                     ),
                     child: Row(
@@ -87,22 +92,22 @@ class ResultsScreen extends StatelessWidget {
                       children: [
                         ...List.generate(5, (index) => Icon(
                           Icons.star,
-                          color: index < metrics.qualityStars
-                              ? (metrics.qualityStars >= 4
+                          color: index < stars
+                              ? (stars >= 4
                                   ? Colors.green
-                                  : (metrics.qualityStars >= 3 ? Colors.amber : Colors.red))
+                                  : (stars >= 3 ? Colors.amber : Colors.red))
                               : const Color(0xFFE5E7EB),
                           size: 18,
                         )),
                         const SizedBox(width: 8),
                         Text(
-                          metrics.qualityLabel,
+                          label,
                           style: GoogleFonts.hankenGrotesk(
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
-                            color: metrics.qualityStars >= 4
+                            color: stars >= 4
                                 ? Colors.green.shade800
-                                : (metrics.qualityStars >= 3 ? Colors.amber.shade900 : Colors.red.shade800),
+                                : (stars >= 3 ? Colors.amber.shade900 : Colors.red.shade800),
                           ),
                         ),
                       ],
@@ -113,11 +118,11 @@ class ResultsScreen extends StatelessWidget {
                     title: 'Pulse (HR)', subtitle: 'Average heartbeats per minute during scan.',
                     iconBg: const Color(0xFFFEF2F2), icon: Icons.favorite, iconColor: Colors.red,
                     child: Column(children: [
-                      _BigValue(value: metrics.avgBpm.toStringAsFixed(1), unit: 'bpm (avg)'),
+                      _BigValue(value: displayAvgBpm.toStringAsFixed(1), unit: 'bpm (avg)'),
                       const SizedBox(height: 4),
-                      Text('Samples recorded: ${metrics.samplesCount}', style: GoogleFonts.hankenGrotesk(fontSize: 12, fontWeight: FontWeight.w500, color: const Color(0xFF6B7280))),
+                      Text('Samples recorded: $samples', style: GoogleFonts.hankenGrotesk(fontSize: 12, fontWeight: FontWeight.w500, color: const Color(0xFF6B7280))),
                       const SizedBox(height: 12),
-                      _Gauge(value: (metrics.avgBpm - 30) / 210, labels: const ['30', '60', '100', '240']),
+                      _Gauge(value: (displayAvgBpm - 30) / 210, labels: const ['30', '60', '100', '240']),
                     ]),
                   ),
                   const SizedBox(height: 16),
