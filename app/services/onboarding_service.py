@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from fastapi import HTTPException
-from app.services.user_store import users
+from app.services.user_store import users, save_user_to_db
 from app.schemas.user_schema import ProfileBasicUpdateRequest, ProfileBodyUpdateRequest, ProfileMedicalUpdateRequest
 
 def calculate_bmi_and_classification(height_cm: float, weight_kg: float):
@@ -28,6 +28,7 @@ def update_basic_profile(user_id: str, request: ProfileBasicUpdateRequest):
     users[user_id]["date_of_birth"] = request.date_of_birth
     users[user_id]["gender"] = request.gender.value if hasattr(request.gender, "value") else request.gender
     users[user_id]["updated_at"] = datetime.now(timezone.utc)
+    save_user_to_db(users[user_id])
     return users[user_id]
 
 def update_body_profile(user_id: str, request: ProfileBodyUpdateRequest):
@@ -44,6 +45,7 @@ def update_body_profile(user_id: str, request: ProfileBodyUpdateRequest):
     users[user_id]["bmi"] = bmi
     users[user_id]["bmi_classification"] = classification
     users[user_id]["updated_at"] = datetime.now(timezone.utc)
+    save_user_to_db(users[user_id])
     return users[user_id]
 
 def update_medical_profile(user_id: str, request: ProfileMedicalUpdateRequest):
@@ -53,6 +55,7 @@ def update_medical_profile(user_id: str, request: ProfileMedicalUpdateRequest):
     bg_val = request.blood_group.value if hasattr(request.blood_group, "value") else request.blood_group
     users[user_id]["blood_group"] = bg_val
     users[user_id]["updated_at"] = datetime.now(timezone.utc)
+    save_user_to_db(users[user_id])
     return users[user_id]
 
 def complete_onboarding(user_id: str):
@@ -61,4 +64,5 @@ def complete_onboarding(user_id: str):
         
     users[user_id]["onboarding_completed"] = True
     users[user_id]["updated_at"] = datetime.now(timezone.utc)
+    save_user_to_db(users[user_id])
     return users[user_id]

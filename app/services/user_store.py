@@ -1,6 +1,10 @@
+import sqlite3
+import os
 import hashlib
 from datetime import datetime, timezone
 from typing import Dict, Any
+
+DB_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "face_pulse_users.db")
 
 
 def _hash_password(password: str) -> str:
@@ -14,28 +18,147 @@ users: Dict[str, Any] = {}
 # In-memory lookup: email -> user_id
 user_emails: Dict[str, str] = {}
 
-# Seed Dummy User Login in Database
-_dummy_user_id = "user_hemkumar"
-_now = datetime.now(timezone.utc)
 
-_dummy_user_record = {
-    "user_id": _dummy_user_id,
-    "full_name": "HemKumar",
-    "email": "hemkumarr2803@gmail.com",
-    "password_hash": _hash_password("hem@1234"),
-    "role": "USER",
-    "date_of_birth": "2004-12-12",
-    "gender": "MALE",
-    "height_cm": 170.0,
-    "weight_kg": 60.0,
-    "bmi": 20.76,
-    "bmi_classification": "Normal",
-    "blood_group": "O+",
-    "onboarding_completed": True,
-    "created_at": _now,
-    "updated_at": _now,
-}
+def get_db_connection():
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    return conn
 
-users[_dummy_user_id] = _dummy_user_record
-users["user_default"] = _dummy_user_record
-user_emails["hemkumarr2803@gmail.com"] = _dummy_user_id
+
+def init_sqlite_db():
+    """Initializes local SQLite database for user accounts and profile credentials."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS local_users (
+            user_id TEXT PRIMARY KEY,
+            full_name TEXT NOT NULL,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            role TEXT DEFAULT 'USER',
+            date_of_birth TEXT,
+            gender TEXT,
+            height_cm REAL,
+            weight_kg REAL,
+            bmi REAL,
+            bmi_classification TEXT,
+            blood_group TEXT,
+            onboarding_completed INTEGER DEFAULT 1,
+            created_at TEXT,
+            updated_at TEXT
+        )
+    """)
+    conn.commit()
+
+    # Seed HemKumar User if not already present
+    cursor.execute("SELECT user_id FROM local_users WHERE email = ?", ("hemkumarr2803@gmail.com",))
+    row = cursor.fetchone()
+    _now_str = datetime.now(timezone.utc).isoformat()
+
+    if not row:
+        cursor.execute("""
+            INSERT INTO local_users (
+                user_id, full_name, email, password_hash, role,
+                date_of_birth, gender, height_cm, weight_kg, bmi,
+                bmi_classification, blood_group, onboarding_completed,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            "user_hemkumar",
+            "HemKumar",
+            "hemkumarr2803@gmail.com",
+            _hash_password("hem@1234"),
+            "USER",
+            "2004-12-12",
+            "MALE",
+            170.0,
+            60.0,
+            20.76,
+            "Normal",
+            "O+",
+            1,
+            _now_str,
+            _now_str
+        ))
+        conn.commit()
+
+    # Load all records into memory store
+    cursor.execute("SELECT * FROM local_users")
+    rows = cursor.fetchall()
+    for r in rows:
+        u_dict = {
+            "user_id": r["user_id"],
+            "full_name": r["full_name"],
+            "email": r["email"],
+            "password_hash": r["password_hash"],
+            "role": r["role"],
+            "date_of_birth": r["date_of_birth"],
+            "gender": r["gender"],
+            "height_cm": r["height_cm"],
+            "weight_kg": r["weight_kg"],
+            "bmi": r["bmi"],
+            "bmi_classification": r["bmi_classification"],
+            "blood_group": r["blood_group"],
+            "onboarding_completed": bool(r["onboarding_completed"]),
+            "created_at": r["created_at"],
+            "updated_at": r["updated_at"],
+        }
+        users[r["user_id"]] = u_dict
+        user_emails[r["email"].lower()] = r["user_id"]
+
+    if "user_hemkumar" in users:
+        users["user_default"] = users["user_hemkumar"]
+
+    conn.close()
+
+
+def save_user_to_db(u: Dict[str, Any]):
+    """Persists a user dictionary to local SQLite DB."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    _now_str = datetime.now(timezone.utc).isoformat()
+    cursor.execute("""
+        INSERT INTO local_users (
+            user_id, full_name, email, password_hash, role,
+            date_of_birth, gender, height_cm, weight_kg, bmi,
+            bmi_classification, blood_group, onboarding_completed,
+            created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET
+            full_name=excluded.full_name,
+            email=excluded.email,
+            password_hash=excluded.password_hash,
+            role=excluded.role,
+            date_of_birth=excluded.date_of_birth,
+            gender=excluded.gender,
+            height_cm=excluded.height_cm,
+            weight_kg=excluded.weight_kg,
+            bmi=excluded.bmi,
+            bmi_classification=excluded.bmi_classification,
+            blood_group=excluded.blood_group,
+            onboarding_completed=excluded.onboarding_completed,
+            updated_at=?
+    """, (
+        u["user_id"],
+        u.get("full_name", "HemKumar"),
+        u["email"],
+        u.get("password_hash", ""),
+        u.get("role", "USER"),
+        u.get("date_of_birth", "2004-12-12"),
+        u.get("gender", "MALE"),
+        u.get("height_cm", 170.0),
+        u.get("weight_kg", 60.0),
+        u.get("bmi", 20.76),
+        u.get("bmi_classification", "Normal"),
+        u.get("blood_group", "O+"),
+        1 if u.get("onboarding_completed", True) else 0,
+        str(u.get("created_at", _now_str)),
+        _now_str,
+        _now_str
+    ))
+    conn.commit()
+    conn.close()
+
+
+# Initialize SQLite DB on module import
+init_sqlite_db()

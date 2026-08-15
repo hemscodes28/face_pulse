@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import '../components/innovative_back_button.dart';
 import '../theme/app_theme.dart';
 import '../components/wavy_bottom_nav_bar.dart';
@@ -64,6 +66,82 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   final List<String> _presetAvatars = ['Avatar 1', 'Avatar 2', 'Avatar 3', 'Avatar 4'];
   int _avatarPresetIndex = 0;
+
+  // Local DB User Profile State
+  String _profileName = 'Hem Kumar';
+  String _profileEmail = 'hemkumarr2803@gmail.com';
+  String _profileHeight = '170';
+  String _profileWeight = '60';
+  String _profileAge = '21';
+  String _profileDob = '12/12/2004';
+  String _profileBmi = '20.76';
+  String _profileBmiClass = 'Normal';
+  String _profileBloodGroup = 'O+';
+  String _profileGender = 'Male';
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchProfileFromDb();
+  }
+
+  Future<void> _fetchProfileFromDb() async {
+    List<String> hostCandidates = [
+      'http://192.168.10.133:8000/api/v1/users/user_hemkumar/profile',
+      'http://127.0.0.1:8000/api/v1/users/user_hemkumar/profile',
+      'http://10.0.2.2:8000/api/v1/users/user_hemkumar/profile',
+      'http://localhost:8000/api/v1/users/user_hemkumar/profile',
+    ];
+
+    for (final url in hostCandidates) {
+      try {
+        final res = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 3));
+        if (res.statusCode == 200) {
+          final data = jsonDecode(res.body);
+          if (mounted) {
+            setState(() {
+              _profileName = data['full_name'] ?? 'Hem Kumar';
+              _profileEmail = data['email'] ?? 'hemkumarr2803@gmail.com';
+              if (data['height_cm'] != null) {
+                _profileHeight = (data['height_cm'] as num).round().toString();
+              }
+              if (data['weight_kg'] != null) {
+                _profileWeight = (data['weight_kg'] as num).round().toString();
+              }
+              if (data['bmi'] != null) {
+                _profileBmi = (data['bmi'] as num).toStringAsFixed(2);
+              }
+              if (data['bmi_classification'] != null) {
+                _profileBmiClass = data['bmi_classification'].toString();
+              }
+              if (data['blood_group'] != null) {
+                _profileBloodGroup = data['blood_group'].toString();
+              }
+              if (data['gender'] != null) {
+                _profileGender = data['gender'].toString();
+              }
+              if (data['date_of_birth'] != null) {
+                String dobRaw = data['date_of_birth'].toString();
+                if (dobRaw.contains('-')) {
+                  final parts = dobRaw.split('-');
+                  if (parts.length == 3) {
+                    _profileDob = '${parts[2]}/${parts[1]}/${parts[0]}';
+                    int year = int.tryParse(parts[0]) ?? 2004;
+                    _profileAge = (DateTime.now().year - year).toString();
+                  }
+                } else {
+                  _profileDob = dobRaw;
+                }
+              }
+            });
+          }
+          break;
+        }
+      } catch (e) {
+        debugPrint("Failed to load profile from $url: $e");
+      }
+    }
+  }
 
   // List of Guardians (supports multiple guardians & in-app acceptance state)
   final List<_GuardianMember> _guardians = [
@@ -1006,7 +1084,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                         const SizedBox(height: 14),
                         Text(
-                          'Hem Kumar',
+                          _profileName,
                           style: AppTheme.sansFont(
                             fontSize: 22,
                             fontWeight: FontWeight.bold,
@@ -1021,7 +1099,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 color: Color(0xFF10B981), size: 16),
                             const SizedBox(width: 4),
                             Text(
-                              'Verified Patient | ID: #CF-9824',
+                              'Verified Patient | $_profileEmail',
                               style: AppTheme.sansFont(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
@@ -1049,26 +1127,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           mainAxisSpacing: 12,
                           crossAxisSpacing: 12,
                           childAspectRatio: 2.1,
-                          children: const [
+                          children: [
                             _ProfileInfoCard(
-                                label: 'HEIGHT', value: '180', unit: 'cm', icon: Icons.straighten_rounded),
+                                label: 'HEIGHT', value: _profileHeight, unit: 'cm', icon: Icons.straighten_rounded),
                             _ProfileInfoCard(
-                                label: 'WEIGHT', value: '75', unit: 'kg', icon: Icons.scale_rounded),
+                                label: 'WEIGHT', value: _profileWeight, unit: 'kg', icon: Icons.scale_rounded),
                             _ProfileInfoCard(
-                                label: 'AGE', value: '28', unit: 'yrs', icon: Icons.cake_rounded),
+                                label: 'AGE', value: _profileAge, unit: 'yrs', icon: Icons.cake_rounded),
                             _ProfileInfoCard(
                                 label: 'DATE OF BIRTH (DOB)',
-                                value: '14/08/1996',
+                                value: _profileDob,
                                 icon: Icons.calendar_month_rounded),
                             _ProfileInfoCard(
                                 label: 'BMI',
-                                value: '23.1',
-                                valueHighlight: ' Normal',
-                                highlightColor: Color(0xFF10B981),
+                                value: _profileBmi,
+                                valueHighlight: ' $_profileBmiClass',
+                                highlightColor: const Color(0xFF10B981),
                                 icon: Icons.speed_rounded),
                             _ProfileInfoCard(
                                 label: 'BLOOD TYPE',
-                                value: 'O+',
+                                value: _profileBloodGroup,
                                 valueHighlight: '+',
                                 highlightColor: Colors.red,
                                 icon: Icons.bloodtype_rounded),
