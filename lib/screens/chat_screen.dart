@@ -178,17 +178,46 @@ class _ChatScreenState extends State<ChatScreen> {
     });
     _scrollToBottom();
     
-    Timer(const Duration(milliseconds: 1500), () {
+    Timer(const Duration(milliseconds: 1200), () {
       final norm = text.toLowerCase();
-      String reply = "I hear you. Regular checkups and rest are key to keeping your metrics in check.";
+      String reply = "I'm analyzing your health data. Consistent daily 60-second face scans help me provide accurate vital insights.";
       Map<String, dynamic>? card;
-      if (norm.contains('exercise') || norm.contains('yes')) {
-        reply = "Box Breathing exercise:\n1. Inhale slowly through your nose for 4 seconds.\n2. Hold your breath for 4 seconds.\n3. Exhale fully for 4 seconds.\n4. Hold for 4 seconds.\nRepeat 4 times to calm your nervous system.";
+
+      if (norm.contains('heart rate') || norm.contains('bpm') || norm.contains('pulse')) {
+        reply = "Your latest resting pulse is **74 BPM**, which falls in the normal healthy range (60–100 BPM). A consistent resting heart rate indicates good cardiovascular efficiency.";
+        card = {'label': 'RESTING PULSE', 'value': '74', 'unit': 'bpm', 'type': 'normal'};
+      } else if (norm.contains('hrv') || norm.contains('variability')) {
+        reply = "Your Heart Rate Variability (HRV) is **${widget.latestHrv} ms**. HRV measures fluctuations between consecutive heartbeats, reflecting autonomic nervous system resilience. Higher HRV signals lower stress and better physical recovery.";
+        card = {'label': 'HRV SCORE', 'value': widget.latestHrv, 'unit': 'ms', 'type': 'normal'};
+      } else if (norm.contains('spo2') || norm.contains('oxygen')) {
+        reply = "Your Oxygen Saturation (SpO2) is **98.2%**. Normal levels range between 95% and 100%. This confirms optimal blood oxygen transport to your tissues.";
+        card = {'label': 'OXYGEN SATURATION', 'value': '98.2', 'unit': '%', 'type': 'normal'};
+      } else if (norm.contains('breathing rate') || norm.contains('respiration') || norm.contains('respiratory rate')) {
+        reply = "Your Respiration Rate is **16 br/min**, measured via micro-color variations in your facial capillary blood flow. Normal resting adult respiration is 12–20 breaths per minute.";
+        card = {'label': 'RESPIRATION', 'value': '16', 'unit': 'br/m', 'type': 'normal'};
+      } else if (norm.contains('camera') || norm.contains('scan my vitals') || norm.contains('how does')) {
+        reply = "FacePulse uses **rPPG (Remote Photoplethysmography)**. As your heart pumps blood, subtle light absorption changes occur on your face. Our AI extracts these optical signals frame-by-frame to compute your vitals in 60 seconds.";
+        card = {'label': 'SCAN TECH', 'value': 'rPPG AI', 'unit': '60s', 'type': 'normal'};
+      } else if (norm.contains('video quality') || norm.contains('rating') || norm.contains('stars')) {
+        reply = "Video Quality Stars (1 to 5) depend on:\n1. **Illumination Variance**: Minimal ambient light fluctuations.\n2. **Face Detection Loss**: Holding head still inside target oval.\n3. **Reference Frames**: Maintaining steady video capture for 60 seconds.";
+        card = {'label': 'QUALITY TARGET', 'value': '5 Stars', 'unit': 'Rating', 'type': 'normal'};
+      } else if (norm.contains('improve my hrv') || norm.contains('reduce stress') || norm.contains('lower stress')) {
+        reply = "To boost your HRV and lower stress:\n• Practice 4-7-8 deep breathing daily.\n• Aim for 7–8 hours of consistent sleep.\n• Engage in 30 mins of moderate aerobic exercise.\n• Stay hydrated and limit late-day caffeine.";
+        card = {'label': 'RECOMMENDATION', 'value': 'Paced Breath', 'unit': 'Daily', 'type': 'normal'};
+      } else if (norm.contains('respiratory health') || norm.contains('respiratory score')) {
+        reply = "Your Respiratory Health Score is **95%**. This composite index evaluates respiratory rhythm stability, RSA ratio, and oxygen exchange efficiency.";
+        card = {'label': 'RESPIRATORY HEALTH', 'value': '95', 'unit': '%', 'type': 'normal'};
+      } else if (norm.contains('exercise') || norm.contains('relaxation') || norm.contains('breathing exercise')) {
+        reply = "🫁 **Box Breathing Technique**:\n1. **Inhale** through nose for 4s.\n2. **Hold** breath for 4s.\n3. **Exhale** slowly through mouth for 4s.\n4. **Hold** empty for 4s.\nRepeat 4 cycles to immediately calm your nervous system.";
+        card = {'label': 'BOX BREATHING', 'value': '4x4x4', 'unit': 'Paced', 'type': 'normal'};
+      } else if (norm.contains('how often') || norm.contains('frequency') || norm.contains('when should i')) {
+        reply = "We recommend **2 scans per day**:\n1. **Morning**: Right after waking to establish baseline vitals.\n2. **Evening**: Before sleep to assess daily physical recovery.\nConsistent scans automatically update your **Health Diary** trend graphs!";
+        card = {'label': 'SCAN FREQUENCY', 'value': '2x', 'unit': 'Per Day', 'type': 'normal'};
       } else if (norm.contains('bmi')) {
-        reply = "Your BMI is currently ${widget.latestBmi}, which is in the healthy Normal Range.";
+        reply = "Your Body Mass Index (BMI) is **${widget.latestBmi}**, which falls in the healthy Normal Range (18.5 - 24.9).";
         card = {'label': 'YOUR BMI', 'value': widget.latestBmi, 'unit': '', 'type': 'normal'};
-      } else if (norm.contains('blood pressure') || norm.contains('pressure') || norm.contains('lower')) {
-        reply = "To maintain healthy blood pressure:\n• Eat whole grains, fruits, and vegetables.\n• Reduce sodium intake.\n• Engage in daily walking.\n• Manage stress through meditation.";
+      } else if (norm.contains('blood pressure') || norm.contains('pressure')) {
+        reply = "To maintain optimal blood pressure:\n• Eat a balanced diet rich in potassium.\n• Reduce daily sodium intake.\n• Walk 30 minutes daily.\n• Practice daily stress management.";
         card = {'label': 'BP TARGET', 'value': '120/80', 'unit': 'mmHg', 'type': 'normal'};
       }
       
@@ -515,24 +544,37 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
                 ),
 
-                // Suggested actions (show only when chat is empty to start thread)
-                if (_msgs.isEmpty)
-                  ClipRect(
-                    child: Container(
-                      color: Colors.transparent,
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                        child: Row(children: [
-                          _SuggestChip('Yes, show me exercises', () => _send('Yes, show me exercises')),
-                          const SizedBox(width: 8),
-                          _SuggestChip('What is my BMI?', () => _send('What is my BMI?')),
-                          const SizedBox(width: 8),
-                          _SuggestChip('How to lower blood pressure?', () => _send('How to lower blood pressure?')),
-                        ]),
-                      ),
+                // 10 Interactive Demo Question Chips
+                ClipRect(
+                  child: Container(
+                    color: Colors.transparent,
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
+                      child: Row(children: [
+                        _SuggestChip('❤️ How is my heart rate (BPM)?', () => _send('How is my latest heart rate (BPM)?')),
+                        const SizedBox(width: 8),
+                        _SuggestChip('⚡ What does my HRV score mean?', () => _send('What does my HRV score mean?')),
+                        const SizedBox(width: 8),
+                        _SuggestChip('🫁 Is my SpO2 level normal?', () => _send('Is my SpO2 (Blood Oxygen) level normal?')),
+                        const SizedBox(width: 8),
+                        _SuggestChip('🌬️ How is Breathing Rate measured?', () => _send('How is my Breathing Rate measured?')),
+                        const SizedBox(width: 8),
+                        _SuggestChip('📷 How does camera scan vitals?', () => _send('How does the camera scan my vitals?')),
+                        const SizedBox(width: 8),
+                        _SuggestChip('⭐ What affects video quality rating?', () => _send('What affects my video quality rating?')),
+                        const SizedBox(width: 8),
+                        _SuggestChip('🧘 How can I improve my HRV?', () => _send('How can I improve my HRV and reduce stress?')),
+                        const SizedBox(width: 8),
+                        _SuggestChip('🛡️ What is my Respiratory Health score?', () => _send('What is my Respiratory Health score?')),
+                        const SizedBox(width: 8),
+                        _SuggestChip('🫁 Show me a breathing exercise', () => _send('Show me a relaxation breathing exercise')),
+                        const SizedBox(width: 8),
+                        _SuggestChip('📅 How often should I scan vitals?', () => _send('How often should I scan my vitals?')),
+                      ]),
                     ),
                   ),
+                ),
 
                 // Input bar (Glassmorphic small rectangle floating card)
                 Padding(
