@@ -215,6 +215,7 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
     ];
 
     String activeBaseUrl = _backendBaseUrl;
+    bool started = false;
     for (final baseUrl in hostCandidates) {
       try {
         debugPrint("🔗 Attempting backend camera start at $baseUrl/start...");
