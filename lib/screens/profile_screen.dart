@@ -394,7 +394,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _showHealthResultsComparisonModal() {
-    int selectedMemberIndex = 0; // 0: Raj Mohan (Patient), 1..N: Accepted Guardians
+    int selectedMemberIndex = 0; // 0: Hem Kumar (Patient), 1..N: Accepted Guardians
 
     showModalBottomSheet(
       context: context,
@@ -413,7 +413,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             String name, role, time, hr, hrv, spo2, resp, stress, statusBadge, summaryText;
 
             if (isUser) {
-              name = 'Raj Mohan B';
+              name = 'Hem Kumar';
               role = 'Patient';
               time = 'Today, 9:30 AM';
               hr = '72 bpm';
@@ -1006,7 +1006,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                         const SizedBox(height: 14),
                         Text(
-                          'Raj Mohan B',
+                          'Hem Kumar',
                           style: AppTheme.sansFont(
                             fontSize: 22,
                             fontWeight: FontWeight.bold,

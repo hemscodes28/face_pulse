@@ -56,7 +56,7 @@ class _AppRouterState extends State<AppRouter> {
   bool _hasSeenIntro = false;
   String? _initialChatMessage;
 
-  String _userName = 'Raj Mohan B';
+  String _userName = 'Hem Kumar';
   final List<MeasurementMetrics> _scanHistory = [];
 
   void _go(AppScreen screen) => setState(() => _screen = screen);
@@ -78,7 +78,7 @@ class _AppRouterState extends State<AppRouter> {
         return SignInScreen(
           onSignIn: () {
             setState(() {
-              _userName = 'Raj Mohan B';
+              _userName = 'Hem Kumar';
             });
             _go(AppScreen.home);
           },
@@ -90,7 +90,7 @@ class _AppRouterState extends State<AppRouter> {
         return SignUpScreen(
           onSignUp: (name) {
             setState(() {
-              _userName = name.isNotEmpty ? name : 'Raj Mohan B';
+              _userName = name.isNotEmpty ? name : 'Hem Kumar';
             });
             _go(AppScreen.onboarding);
           },
