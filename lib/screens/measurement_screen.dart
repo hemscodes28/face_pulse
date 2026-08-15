@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ui';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:camera/camera.dart';
+import 'package:http/http.dart' as http;
 import '../components/innovative_back_button.dart';
 import '../theme/app_theme.dart';
 
@@ -31,7 +33,9 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
   int _timeLeft = 30;
   String _pulseVal = '--';
   String _bpVal = '-- / --';
-  Timer? _timer, _simTimer, _adviceTimer;
+  Timer? _timer, _simTimer, _adviceTimer, _pollTimer;
+  String? _activeMeasurementId;
+  static const String _backendBaseUrl = 'http://127.0.0.1:8000/api/v1/measurements';
   
   late AnimationController _scanlineCtrl;
   late AnimationController _bracketCtrl;
@@ -90,10 +94,12 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
     _timer?.cancel();
     _simTimer?.cancel();
     _adviceTimer?.cancel();
+    _pollTimer?.cancel();
     _ecgTickTimer?.cancel();
     _scanlineCtrl.dispose();
     _bracketCtrl.dispose();
     _cameraController?.dispose();
+    _sendBackendStop();
     super.dispose();
   }
 
@@ -142,29 +148,75 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
     await _setupCameraController(_cameras[_selectedCameraIndex]);
   }
 
-  void _startScan() {
+  Future<void> _startScan() async {
     setState(() {
       _state = ScanState.scanning;
       _timeLeft = 30;
-      _currentHeartRate = 60.0 + _random.nextDouble() * 20.0;
-      _targetHeartRate = _currentHeartRate;
-      _pulseVal = _currentHeartRate.round().toString();
-      _bpVal = '${110 + _random.nextInt(12)} / ${70 + _random.nextInt(8)}';
+      _currentHeartRate = 70.0;
+      _targetHeartRate = 70.0;
+      _pulseVal = 'warming up...';
+      _bpVal = '-- / --';
       _adviceIndex = 0;
     });
 
+    // 1. Call Backend API to start visual debugger pipeline
+    try {
+      final res = await http.post(
+        Uri.parse('$_backendBaseUrl/start'),
+        headers: {'Content-Type': 'application/json'},
+      );
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        _activeMeasurementId = data['measurement_id'];
+        debugPrint("Started visual debugger session: $_activeMeasurementId");
+      }
+    } catch (e) {
+      debugPrint("Error calling backend start endpoint: $e");
+    }
+
+    // 2. Local countdown timer
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
       setState(() {
         if (_timeLeft <= 1) {
           _timer?.cancel();
           _adviceTimer?.cancel();
+          _pollTimer?.cancel();
           _state = ScanState.completed;
-          _pulseVal = _currentHeartRate.round().toString();
           _timeLeft = 0;
+          _sendBackendStop();
         } else {
           _timeLeft--;
         }
       });
+    });
+
+    // 3. Continuously poll latest backend state (every 1 second)
+    _pollTimer = Timer.periodic(const Duration(seconds: 1), (_) async {
+      if (_activeMeasurementId == null || !mounted) return;
+      try {
+        final res = await http.get(
+          Uri.parse('$_backendBaseUrl/$_activeMeasurementId/latest'),
+        );
+        if (res.statusCode == 200) {
+          final snap = jsonDecode(res.body);
+          if (mounted && _state == ScanState.scanning) {
+            setState(() {
+              if (snap['bpm'] != null) {
+                double bpm = (snap['bpm'] as num).toDouble();
+                _targetHeartRate = bpm;
+                _pulseVal = bpm.round().toString();
+                
+                int sys = 110 + (bpm * 0.1).round();
+                int dia = 70 + (bpm * 0.05).round();
+                _bpVal = '$sys / $dia';
+              }
+            });
+          }
+        }
+      } catch (e) {
+        debugPrint("Error polling backend measurement state: $e");
+      }
     });
 
     _adviceTimer = Timer.periodic(const Duration(seconds: 3), (_) {
@@ -176,9 +228,26 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
     });
   }
 
+  Future<void> _sendBackendStop() async {
+    if (_activeMeasurementId == null) return;
+    final id = _activeMeasurementId;
+    _activeMeasurementId = null;
+    try {
+      await http.post(
+        Uri.parse('$_backendBaseUrl/$id/stop'),
+        headers: {'Content-Type': 'application/json'},
+      );
+      debugPrint("Stopped visual debugger session: $id");
+    } catch (e) {
+      debugPrint("Error stopping backend session: $e");
+    }
+  }
+
   void _stopScan() {
     _timer?.cancel();
     _adviceTimer?.cancel();
+    _pollTimer?.cancel();
+    _sendBackendStop();
     setState(() {
       _state = ScanState.idle;
       _timeLeft = 30;
