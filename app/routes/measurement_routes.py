@@ -1,6 +1,7 @@
 import asyncio
 import json
 import uuid
+from typing import Optional
 
 from fastapi import APIRouter, WebSocket, HTTPException, Request, status
 from sse_starlette.sse import EventSourceResponse
@@ -179,7 +180,9 @@ async def debugger_stream(measurement_id: str, request: Request):
     return EventSourceResponse(event_generator())
 
 
-def debugger_latest(measurement_id: str):
+@router.get("/latest", response_model=DebuggerLatestResult)
+@router.get("/{measurement_id}/latest", response_model=DebuggerLatestResult)
+def debugger_latest(measurement_id: Optional[str] = "latest"):
     """
     Return the most recent frame result produced by the visual debugger.
 
@@ -189,7 +192,7 @@ def debugger_latest(measurement_id: str):
     snap = runtime.snapshot()
 
     # If runtime is active but has a new measurement_id, return active snapshot
-    active_id = snap["measurement_id"] or measurement_id
+    active_id = snap["measurement_id"] or measurement_id or "latest"
 
     # During warmup (bpm still None), report WAITING status
     effective_status = snap["status"] or "WAITING"
