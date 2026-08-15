@@ -195,10 +195,14 @@ def debugger_latest(measurement_id: Optional[str] = "latest"):
     # If runtime is active but has a new measurement_id, return active snapshot
     active_id = snap["measurement_id"] or measurement_id or "latest"
 
-    # During warmup (bpm still None), report WAITING status
-    effective_status = snap["status"] or "WAITING"
-    if snap["bpm"] is None:
+    # During warmup (bpm still None), preserve specific quality status (NO_FACE, BAD_POSE, etc.)
+    raw_status = snap["status"] or "WAITING"
+    if raw_status in ("NO_FACE", "BAD_POSE", "FACE_MISALIGNED", "LOW_LIGHT", "OVER_EXPOSED"):
+        effective_status = raw_status
+    elif snap["bpm"] is None:
         effective_status = "WAITING"
+    else:
+        effective_status = raw_status
 
     return DebuggerLatestResult(
         measurement_id=active_id,

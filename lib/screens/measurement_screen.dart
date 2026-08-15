@@ -75,6 +75,8 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
   final List<double> _luminanceHistory = [];
   int _totalPollsCount = 0;
   int _faceLostCount = 0;
+  int _noFaceCount = 0;
+  int _badPoseCount = 0;
   
   late AnimationController _scanlineCtrl;
   late AnimationController _bracketCtrl;
@@ -202,6 +204,8 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
       _luminanceHistory.clear();
       _totalPollsCount = 0;
       _faceLostCount = 0;
+      _noFaceCount = 0;
+      _badPoseCount = 0;
       _pulseVal = 'warming up...';
       _bpVal = '-- / --';
       _adviceIndex = 0;
@@ -279,8 +283,12 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
           if (mounted && _state == ScanState.scanning) {
             setState(() {
               _totalPollsCount++;
-              String statusStr = snap['status']?.toString() ?? '';
-              if (statusStr.contains('NO_FACE') || statusStr.contains('MISALIGNED')) {
+              String statusStr = snap['status']?.toString().toUpperCase() ?? '';
+              if (statusStr.contains('NO_FACE')) {
+                _noFaceCount++;
+                _faceLostCount++;
+              } else if (statusStr.contains('BAD_POSE') || statusStr.contains('MISALIGNED')) {
+                _badPoseCount++;
                 _faceLostCount++;
               }
 
@@ -348,6 +356,8 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
       _luminanceHistory.clear();
       _totalPollsCount = 0;
       _faceLostCount = 0;
+      _noFaceCount = 0;
+      _badPoseCount = 0;
       _pulseVal = '--';
       _bpVal = '-- / --';
     });
@@ -486,48 +496,72 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
     double calculatedSpo2 = baseSpo2.clamp(94.0, 99.0);
 
     // 6. Comprehensive Multi-Factor Video Quality Assessment
+    // Focuses heavily on Face Presence ("no face found") and Head Position Changes / Pose Stability
     int qualityScore = 5;
-    double faceLostRatio = _totalPollsCount > 0 ? (_faceLostCount / _totalPollsCount) : 0.0;
+    double noFaceRatio = _totalPollsCount > 0 ? (_noFaceCount / _totalPollsCount) : 0.0;
+    double badPoseRatio = _totalPollsCount > 0 ? (_badPoseCount / _totalPollsCount) : 0.0;
     int validSamples = _bpmHistory.length;
 
     bool extremeLight = meanLum < 45.0 || meanLum > 215.0;
-    if (extremeLight || stdDevLum > 25.0) {
-      qualityScore -= 3;
-    } else if (stdDevLum > 12.0) {
-      qualityScore -= 1;
+
+    // RULE 1: If Face is NOT Found (or face lost ratio > 15% / zero samples), Video Quality MUST BE POOR (1 Star)
+    if (_noFaceCount > 0 || noFaceRatio > 0.15 || validSamples == 0) {
+      qualityScore = 1;
+    } else {
+      // RULE 2: Head Position Changes & Bad Pose / Misalignment Penalties (Primary Factor)
+      if (badPoseRatio > 0.35) {
+        qualityScore -= 3; // Severe head position shifts / motion
+      } else if (badPoseRatio > 0.15) {
+        qualityScore -= 2; // Moderate head position changes
+      } else if (badPoseRatio > 0.05) {
+        qualityScore -= 1; // Minor position variations
+      }
+
+      // RULE 3: Illumination & Lighting Variance (Secondary Factor)
+      if (extremeLight || stdDevLum > 25.0) {
+        qualityScore -= 2;
+      } else if (stdDevLum > 15.0) {
+        qualityScore -= 1;
+      }
+
+      // RULE 4: Sample density / rPPG signal accumulation
+      if (validSamples < 20) {
+        qualityScore -= 2;
+      } else if (validSamples < 35) {
+        qualityScore -= 1;
+      }
     }
 
-    if (faceLostRatio > 0.40) {
-      qualityScore -= 2;
-    } else if (faceLostRatio > 0.20) {
-      qualityScore -= 1;
-    }
-
-    if (validSamples < 20) {
-      qualityScore -= 2;
-    } else if (validSamples < 35) {
-      qualityScore -= 1;
+    // Hard Guard: If no face found or face ratio > 15%, ALWAYS force 1 Star (POOR)
+    if (noFaceRatio > 0.15 || validSamples == 0) {
+      qualityScore = 1;
     }
 
     int qualityStars = qualityScore.clamp(1, 5);
-    String qualityLabel = 'Excellent Video Quality - Optimal Illumination & Tracking';
+    String qualityLabel = 'Excellent Video Quality - Stable Face & Head Position';
 
     if (qualityStars == 1) {
-      if (extremeLight || stdDevLum > 25.0) {
-        qualityLabel = 'Poor Video Quality - High Lighting Variance';
-      } else if (faceLostRatio > 0.40) {
-        qualityLabel = 'Poor Video Quality - Face Not Detected Frequently';
+      if (noFaceRatio > 0.15 || validSamples == 0) {
+        qualityLabel = 'Poor Video Quality - No Face Found';
+      } else if (badPoseRatio > 0.25) {
+        qualityLabel = 'Poor Video Quality - Excessive Head Position Shift';
+      } else if (extremeLight || stdDevLum > 25.0) {
+        qualityLabel = 'Poor Video Quality - High Illumination Variance';
       } else {
-        qualityLabel = 'Poor Video Quality - Low Reference Frames Count';
+        qualityLabel = 'Poor Video Quality - Unstable Camera Stream';
       }
     } else if (qualityStars == 2) {
-      qualityLabel = 'Fair Video Quality - Frequent Motion / Light Shifts';
+      if (badPoseRatio > 0.15) {
+        qualityLabel = 'Fair Video Quality - Unstable Head Position';
+      } else {
+        qualityLabel = 'Fair Video Quality - Motion & Illumination Shift';
+      }
     } else if (qualityStars == 3) {
-      qualityLabel = 'Normal Video Quality - Slight Variations';
+      qualityLabel = 'Normal Video Quality - Minor Head Position Variations';
     } else if (qualityStars == 4) {
-      qualityLabel = 'Very Good Video Quality - Stable Frame Tracking';
+      qualityLabel = 'Very Good Video Quality - Good Face Alignment';
     } else {
-      qualityLabel = 'Excellent Video Quality - Optimal Illumination & Tracking';
+      qualityLabel = 'Excellent Video Quality - Stable Face & Head Position';
     }
 
     double calculatedStress = (100.0 / calculatedHrv * 2.0).clamp(0.5, 9.5);
