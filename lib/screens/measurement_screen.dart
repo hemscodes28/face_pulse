@@ -14,22 +14,32 @@ enum ScanState { idle, scanning, completed }
 class MeasurementMetrics {
   final int pulse, sys, dia, hrv, breath, workload, para;
   final double stress, bmi;
-  final double avgBpm;
-  final double luminanceVariance;
-  final int qualityStars;
-  final String qualityLabel;
-  final int samplesCount;
+  final double? _avgBpm;
+  final double? _luminanceVariance;
+  final int? _qualityStars;
+  final String? _qualityLabel;
+  final int? _samplesCount;
+
+  double get avgBpm => _avgBpm ?? pulse.toDouble();
+  double get luminanceVariance => _luminanceVariance ?? 0.0;
+  int get qualityStars => _qualityStars ?? 5;
+  String get qualityLabel => _qualityLabel ?? 'Good Video Quality - Optimal Illumination';
+  int get samplesCount => _samplesCount ?? 30;
 
   const MeasurementMetrics({
     required this.pulse, required this.sys, required this.dia,
     required this.hrv, required this.breath, required this.workload,
     required this.para, required this.stress, required this.bmi,
-    this.avgBpm = 72.0,
-    this.luminanceVariance = 0.0,
-    this.qualityStars = 5,
-    this.qualityLabel = 'Good Video Quality - Optimal Illumination',
-    this.samplesCount = 30,
-  });
+    double? avgBpm,
+    double? luminanceVariance,
+    int? qualityStars,
+    String? qualityLabel,
+    int? samplesCount,
+  })  : _avgBpm = avgBpm,
+        _luminanceVariance = luminanceVariance,
+        _qualityStars = qualityStars,
+        _qualityLabel = qualityLabel,
+        _samplesCount = samplesCount;
 }
 
 class MeasurementScreen extends StatefulWidget {
