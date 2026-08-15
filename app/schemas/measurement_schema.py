@@ -124,3 +124,31 @@ class MeasurementResult(BaseModel):
     analysis: Optional[Any] = None
     vitals: Optional[Dict[str, Any]] = None
     quality_summary: Optional[Dict[str, Any]] = None
+
+
+# ── Visual Debugger / Measurement Runtime Schemas ──────────────────────────
+
+class DebuggerStartResponse(BaseModel):
+    """Response for POST /api/measurements/start"""
+    measurement_id: str = Field(..., description="Unique ID for this measurement run")
+    status: str = Field(default="started", description="Always 'started'")
+
+
+class DebuggerLatestResult(BaseModel):
+    """Response for GET /api/measurements/{measurement_id}/latest"""
+    measurement_id: str
+    frame: Optional[int] = Field(None, description="Latest processed frame index")
+    status: Optional[str] = Field(None, description="'OK', 'NO_FACE', 'WAITING', etc.")
+    bpm: Optional[float] = Field(None, description="Heart rate in BPM (null during warmup)")
+    luminance: Optional[float] = Field(None, description="Luminance Y (null during warmup)")
+    snr: Optional[float] = Field(None, description="Signal-to-Noise Ratio in dB (null during warmup)")
+    timestamp: Optional[str] = Field(None, description="ISO-8601 UTC timestamp of last update")
+
+
+class DebuggerStopResponse(BaseModel):
+    """Response for POST /api/measurements/{measurement_id}/stop"""
+    measurement_id: str
+    status: str = Field(default="completed")
+    bpm: Optional[float] = None
+    luminance: Optional[float] = None
+    snr: Optional[float] = None

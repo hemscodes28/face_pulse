@@ -198,7 +198,11 @@ def _finalize_measurement_session(measurement_id: str, start_time: datetime, dur
     return final_result
 
 
-from app.services.rppg_processor import RPPGSignalProcessor
+import os as _os, sys as _sys
+_ROOT = _os.path.normpath(_os.path.join(_os.path.dirname(__file__), "..", ".."))
+if _ROOT not in _sys.path:
+    _sys.path.insert(0, _ROOT)
+from rppg_processor import RPPGSignalProcessor
 
 async def run_measurement_loop(measurement_id: str, websocket: WebSocket):
     """
