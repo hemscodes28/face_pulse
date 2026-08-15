@@ -294,16 +294,9 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
                 _pulseVal = bpm.round().toString();
                 _bpmHistory.add(bpm);
                 
-                if (snap['vitals'] != null) {
-                  final v = snap['vitals'];
-                  int sys = (v['systolic_bp'] as num?)?.toInt() ?? (110 + (bpm * 0.1).round());
-                  int dia = (v['diastolic_bp'] as num?)?.toInt() ?? (70 + (bpm * 0.05).round());
-                  _bpVal = '$sys / $dia';
-                } else {
-                  int sys = 110 + (bpm * 0.1).round();
-                  int dia = 70 + (bpm * 0.05).round();
-                  _bpVal = '$sys / $dia';
-                }
+                int sys = 110 + (bpm * 0.1).round();
+                int dia = 70 + (bpm * 0.05).round();
+                _bpVal = '$sys / $dia';
               }
               if (snap['luminance'] != null) {
                 double lum = (snap['luminance'] as num).toDouble();
