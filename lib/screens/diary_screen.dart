@@ -584,9 +584,92 @@ class _DiaryScreenState extends State<DiaryScreen> {
     double? minVal,
     double? maxVal,
   }) {
+    if (points.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x03000000),
+              blurRadius: 10,
+              offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Icon(icon, color: lineColor.withOpacity(0.5), size: 18),
+                    const SizedBox(width: 8),
+                    Text(
+                      title,
+                      style: AppTheme.sansFont(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF64748B),
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    'No Data',
+                    style: AppTheme.sansFont(
+                      fontSize: 8,
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFF64748B),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            Icon(Icons.show_chart_rounded, size: 36, color: const Color(0xFFCBD5E1)),
+            const SizedBox(height: 8),
+            Text(
+              'No $title scans in DB yet',
+              style: GoogleFonts.hankenGrotesk(fontSize: 13, fontWeight: FontWeight.w700, color: const Color(0xFF475569)),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Perform a 60s face scan to record your $_timePeriod data into the DB.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.hankenGrotesk(fontSize: 11, color: const Color(0xFF94A3B8)),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: widget.onStartScan,
+              icon: const Icon(Icons.videocam_rounded, size: 14),
+              label: Text('Start Vital Check', style: GoogleFonts.hankenGrotesk(fontSize: 12, fontWeight: FontWeight.w700)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0077CC),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                elevation: 0,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     double calcMin = minVal ?? points.reduce(math.min);
     double calcMax = maxVal ?? points.reduce(math.max);
-    if (pointsDiastolic != null) {
+    if (pointsDiastolic != null && pointsDiastolic.isNotEmpty) {
       calcMin = math.min(calcMin, pointsDiastolic.reduce(math.min));
       calcMax = math.max(calcMax, pointsDiastolic.reduce(math.max));
     }
@@ -622,7 +705,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
                     title,
                     style: AppTheme.sansFont(
                       fontSize: 10,
-                        fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w800,
                       color: const Color(0xFF64748B),
                       letterSpacing: 0.5,
                     ),
@@ -639,7 +722,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
                   status,
                   style: AppTheme.sansFont(
                     fontSize: 8,
-                      fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w800,
                     color: statusColor,
                   ),
                 ),
