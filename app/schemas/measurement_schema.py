@@ -143,6 +143,7 @@ class DebuggerLatestResult(BaseModel):
     luminance: Optional[float] = Field(None, description="Luminance Y (null during warmup)")
     snr: Optional[float] = Field(None, description="Signal-to-Noise Ratio in dB (null during warmup)")
     timestamp: Optional[str] = Field(None, description="ISO-8601 UTC timestamp of last update")
+    vitals: Optional[Dict[str, Any]] = Field(None, description="Backend converted vital features derived from BPM")
 
 
 class DebuggerStopResponse(BaseModel):
