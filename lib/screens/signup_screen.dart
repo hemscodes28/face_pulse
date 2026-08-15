@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import '../theme/app_theme.dart';
 import '../components/innovative_back_button.dart';
 
@@ -96,23 +98,71 @@ class _SignUpScreenState extends State<SignUpScreen> with TickerProviderStateMix
     return const _PasswordStrength(4, 'Strong', AppTheme.primary);
   }
 
-  void _handleSubmit() {
+  Future<void> _handleSubmit() async {
     if (_formKey.currentState!.validate()) {
       if (_passwordController.text != _confirmController.text) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Passwords do not match'), backgroundColor: Colors.red),
+        );
         return;
       }
       setState(() {
         _isLoading = true;
       });
-      // Simulate network request
-      Future.delayed(const Duration(milliseconds: 900), () {
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
-          });
-          widget.onSignUp(_nameController.text);
+
+      List<String> signupEndpoints = [
+        'http://192.168.10.133:8000/api/v1/auth/signup',
+        'http://127.0.0.1:8000/api/v1/auth/signup',
+        'http://10.0.2.2:8000/api/v1/auth/signup',
+        'http://localhost:8000/api/v1/auth/signup',
+      ];
+
+      bool success = false;
+      String errorMsg = 'Failed to connect to authentication server.';
+
+      for (final endpoint in signupEndpoints) {
+        try {
+          final res = await http.post(
+            Uri.parse(endpoint),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'full_name': _nameController.text.trim(),
+              'email': _emailController.text.trim(),
+              'password': _passwordController.text,
+              'confirm_password': _confirmController.text,
+            }),
+          ).timeout(const Duration(seconds: 4));
+
+          if (res.statusCode == 200) {
+            success = true;
+            break;
+          } else {
+            final errBody = jsonDecode(res.body);
+            errorMsg = errBody['detail'] ?? 'Registration failed';
+          }
+        } catch (e) {
+          debugPrint('Signup error at $endpoint: $e');
         }
-      });
+      }
+
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        if (success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Account registered & stored in local database!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          widget.onSignUp(_nameController.text.trim());
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(errorMsg), backgroundColor: Colors.red),
+          );
+        }
+      }
     }
   }
 

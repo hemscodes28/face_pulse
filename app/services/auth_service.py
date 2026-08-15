@@ -33,6 +33,9 @@ def create_access_token(data: dict) -> str:
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
+from app.services.user_store import users, user_emails, save_user_to_db
+
+
 def signup(request: SignupRequest) -> TokenResponse:
     if request.password != request.confirm_password:
         raise HTTPException(status_code=400, detail="Passwords do not match")
@@ -53,11 +56,16 @@ def signup(request: SignupRequest) -> TokenResponse:
         updated_at=now,
     )
 
-    users[user_id] = user_record.model_dump()
+    u_dict = user_record.model_dump()
+    users[user_id] = u_dict
+    users["user_default"] = u_dict
     user_emails[email_lower] = user_id
 
+    # Persist new user signup to local SQLite DB
+    save_user_to_db(u_dict)
+
     access_token = create_access_token(data={"sub": user_id})
-    return TokenResponse(access_token=access_token, token_type="bearer", user_id=user_id)
+    return TokenResponse(access_token=access_token, token_type="bearer", user_id=user_id, full_name=request.full_name)
 
 
 def login(request: LoginRequest) -> TokenResponse:
@@ -71,8 +79,12 @@ def login(request: LoginRequest) -> TokenResponse:
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    # Set as active session user
+    users["user_default"] = users[user_id]
+    full_name = users[user_id].get("full_name", "User")
+
     access_token = create_access_token(data={"sub": user_id})
-    return TokenResponse(access_token=access_token, token_type="bearer", user_id=user_id)
+    return TokenResponse(access_token=access_token, token_type="bearer", user_id=user_id, full_name=full_name)
 
 
 def google_login(request: GoogleLoginRequest) -> TokenResponse:

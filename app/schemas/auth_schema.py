@@ -10,10 +10,13 @@ class LoginRequest(BaseModel):
     email: str = Field(..., description="User's email address")
     password: str = Field(..., description="Password")
 
+from typing import Optional
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str
     user_id: str
+    full_name: Optional[str] = None
 
 class GoogleLoginRequest(BaseModel):
     token: str = Field(..., description="Dummy google token from frontend")

@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import '../theme/app_theme.dart';
 import '../components/innovative_back_button.dart';
 
@@ -68,20 +70,63 @@ class _SignInScreenState extends State<SignInScreen> with TickerProviderStateMix
     super.dispose();
   }
 
-  void _handleSubmit() {
+  Future<void> _handleSubmit() async {
     if (_formKey.currentState!.validate()) {
       setState(() {
         _isLoading = true;
       });
-      // Simulate network request
-      Future.delayed(const Duration(milliseconds: 900), () {
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
-          });
-          widget.onSignIn();
+
+      List<String> loginEndpoints = [
+        'http://192.168.10.133:8000/api/v1/auth/login',
+        'http://127.0.0.1:8000/api/v1/auth/login',
+        'http://10.0.2.2:8000/api/v1/auth/login',
+        'http://localhost:8000/api/v1/auth/login',
+      ];
+
+      bool success = false;
+      String errorMsg = 'Invalid email or password.';
+
+      for (final endpoint in loginEndpoints) {
+        try {
+          final res = await http.post(
+            Uri.parse(endpoint),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'email': _emailController.text.trim(),
+              'password': _passwordController.text,
+            }),
+          ).timeout(const Duration(seconds: 4));
+
+          if (res.statusCode == 200) {
+            success = true;
+            break;
+          } else {
+            final errBody = jsonDecode(res.body);
+            errorMsg = errBody['detail'] ?? 'Login failed';
+          }
+        } catch (e) {
+          debugPrint('Login error at $endpoint: $e');
         }
-      });
+      }
+
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        if (success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Login successful! Welcome back.'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          widget.onSignIn();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(errorMsg), backgroundColor: Colors.red),
+          );
+        }
+      }
     }
   }
 
