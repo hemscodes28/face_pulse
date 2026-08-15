@@ -1,4 +1,4 @@
-# 🫀 Face Pulse
+# 🫀 Carefor
 
 **Face Pulse** is a state-of-the-art, non-invasive biometrics tracking application and computer vision engine. It estimates real-time vital signs—including **Heart Rate (BPM)**, **Heart Rate Variability (HRV)**, **Blood Oxygen (SpO2 %)**, **Blood Pressure (Systolic / Diastolic)**, and **Respiration Rate (br/min)**—using contactless **Remote Photoplethysmography (rPPG)** via a standard webcam or mobile camera.
 
