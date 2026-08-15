@@ -412,7 +412,7 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
     });
   }
 
-  void _viewResults() {
+  Future<void> _viewResults() async {
     // 1. Calculate Average BPM from collected backend samples
     double calculatedAvgBpm = _bpmHistory.isNotEmpty
         ? _bpmHistory.reduce((a, b) => a + b) / _bpmHistory.length
@@ -456,10 +456,7 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
     double baseSpo2 = 98.6 - (stdDevLum > 15.0 ? 1.2 : 0.4);
     double calculatedSpo2 = baseSpo2.clamp(94.0, 99.0);
 
-    // 6. Comprehensive Multi-Factor Video Quality Assessment:
-    //    Factor A: Luminance Variance & Lighting Level
-    //    Factor B: Face Detection Loss Ratio
-    //    Factor C: Valid Reference Frames Count
+    // 6. Comprehensive Multi-Factor Video Quality Assessment
     int qualityScore = 5;
     double faceLostRatio = _totalPollsCount > 0 ? (_faceLostCount / _totalPollsCount) : 0.0;
     int validSamples = _bpmHistory.length;
@@ -509,8 +506,8 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
     int calculatedWorkload = (calculatedAvgBpm * finalSys / 60.0).round().clamp(80, 250);
 
     try {
-      http.post(
-        Uri.parse('$_backendBaseUrl/diary/entry'),
+      await http.post(
+        Uri.parse('http://127.0.0.1:8000/api/v1/diary/entry'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'user_id': 'user_default',
@@ -525,6 +522,7 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
           'quality_label': qualityLabel,
         }),
       );
+      debugPrint("Logged scan to backend DB successfully!");
     } catch (e) {
       debugPrint("Error persisting scan to backend DB: $e");
     }

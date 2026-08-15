@@ -92,15 +92,6 @@ class _DiaryScreenState extends State<DiaryScreen> {
       debugPrint("Error fetching DB diary history: $e");
     } finally {
       if (mounted) setState(() => _isLoadingHistory = false);
-    }
-  }
-
-  List<MeasurementMetrics> get _effectiveHistory {
-    if (_dbScanHistory.isNotEmpty) return _dbScanHistory;
-    if (widget.scanHistory.isNotEmpty) return widget.scanHistory;
-    return [];
-  }
-
   // Get month abbreviation name
   String _getMonthAbbr(int month) {
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -142,11 +133,24 @@ class _DiaryScreenState extends State<DiaryScreen> {
     return false;
   }
 
-  // Retrieve the latest scanning output metrics
+  List<MeasurementMetrics> get _effectiveHistory {
+    List<MeasurementMetrics> list = [];
+    list.addAll(_dbScanHistory);
+    for (final scan in widget.scanHistory) {
+      if (!list.contains(scan)) {
+        list.add(scan);
+      }
+    }
+    return list;
+  }
+
+  // Retrieve the latest scanning output metrics (last scan received by user)
   MeasurementMetrics get _latestScan {
-    final history = _effectiveHistory;
-    if (history.isNotEmpty) {
-      return history.last;
+    if (widget.scanHistory.isNotEmpty) {
+      return widget.scanHistory.last;
+    }
+    if (_dbScanHistory.isNotEmpty) {
+      return _dbScanHistory.last;
     }
     return const MeasurementMetrics(
       pulse: 75, sys: 117, dia: 74, hrv: 48,
