@@ -92,6 +92,9 @@ class _DiaryScreenState extends State<DiaryScreen> {
       debugPrint("Error fetching DB diary history: $e");
     } finally {
       if (mounted) setState(() => _isLoadingHistory = false);
+    }
+  }
+
   // Get month abbreviation name
   String _getMonthAbbr(int month) {
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
