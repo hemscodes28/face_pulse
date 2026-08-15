@@ -4,6 +4,8 @@ import hashlib
 from datetime import datetime, timezone
 from typing import Dict, Any
 
+from app.services.diary_store import diary_records
+
 DB_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "face_pulse_users.db")
 
 
@@ -26,7 +28,7 @@ def get_db_connection():
 
 
 def init_sqlite_db():
-    """Initializes local SQLite database for user accounts and profile credentials."""
+    """Initializes local SQLite database for user accounts, credentials, and scan history."""
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("""
@@ -46,6 +48,24 @@ def init_sqlite_db():
             onboarding_completed INTEGER DEFAULT 1,
             created_at TEXT,
             updated_at TEXT
+        )
+    """)
+    
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS local_diary (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            measurement_id TEXT NOT NULL,
+            recorded_at TEXT NOT NULL,
+            heart_rate REAL,
+            spo2 REAL,
+            systolic INTEGER,
+            diastolic INTEGER,
+            hrv INTEGER,
+            breath INTEGER,
+            respiratory_health INTEGER,
+            quality_stars INTEGER,
+            quality_label TEXT
         )
     """)
     conn.commit()
@@ -82,7 +102,7 @@ def init_sqlite_db():
         ))
         conn.commit()
 
-    # Load all records into memory store
+    # Load all user records into memory store
     cursor.execute("SELECT * FROM local_users")
     rows = cursor.fetchall()
     for r in rows:
@@ -108,6 +128,30 @@ def init_sqlite_db():
 
     if "user_hemkumar" in users:
         users["user_default"] = users["user_hemkumar"]
+
+    # Load all local diary entries into memory store
+    cursor.execute("SELECT * FROM local_diary ORDER BY id ASC")
+    diary_rows = cursor.fetchall()
+    diary_records.clear()
+    for d in diary_rows:
+        try:
+            dt = datetime.fromisoformat(d["recorded_at"])
+        except Exception:
+            dt = datetime.now(timezone.utc)
+        diary_records.append({
+            "user_id": d["user_id"],
+            "measurement_id": d["measurement_id"],
+            "recorded_at": dt,
+            "heart_rate": d["heart_rate"],
+            "spo2": d["spo2"],
+            "systolic": d["systolic"],
+            "diastolic": d["diastolic"],
+            "hrv": d["hrv"],
+            "breath": d["breath"],
+            "respiratory_health": d["respiratory_health"],
+            "quality_stars": d["quality_stars"],
+            "quality_label": d["quality_label"],
+        })
 
     conn.close()
 

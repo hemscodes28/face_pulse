@@ -78,6 +78,7 @@ class _AppRouterState extends State<AppRouter> {
         return SignInScreen(
           onSignIn: () {
             setState(() {
+              _scanHistory.clear();
               _userName = 'Hem Kumar';
             });
             _go(AppScreen.home);
@@ -90,6 +91,7 @@ class _AppRouterState extends State<AppRouter> {
         return SignUpScreen(
           onSignUp: (name) {
             setState(() {
+              _scanHistory.clear();
               _userName = name.isNotEmpty ? name : 'Hem Kumar';
             });
             _go(AppScreen.onboarding);
