@@ -1,37 +1,8 @@
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 import uuid
 from typing import List, Dict, Any, Optional
 from app.schemas.diary_schema import DiaryRecord, DiaryDateResponse, DiaryHistoryResponse
 from app.services.diary_store import diary_records
-
-def init_seed_diary_records_if_empty(user_id: str = "user_default"):
-    if diary_records:
-        return
-    now = datetime.now(timezone.utc)
-    seed_offsets_days = [6, 4, 2, 1, 0]
-    base_bpms = [71.0, 75.0, 78.0, 72.0, 74.0]
-    base_spo2s = [98.0, 97.5, 98.5, 99.0, 98.0]
-
-    for i, offset in enumerate(seed_offsets_days):
-        dt = now - timedelta(days=offset)
-        rec = DiaryRecord(
-            user_id=user_id,
-            measurement_id=str(uuid.uuid4()),
-            recorded_at=dt,
-            heart_rate=base_bpms[i],
-            spo2=base_spo2s[i],
-            systolic=110 + int(base_bpms[i] * 0.1),
-            diastolic=70 + int(base_bpms[i] * 0.05),
-            hrv=48 + i * 2,
-            breath=16 + (i % 3),
-            respiratory_health=95 + (i % 4),
-            quality_stars=5,
-            quality_label="Good Video Quality - Optimal Illumination",
-            hr_series=[base_bpms[i] - 2, base_bpms[i], base_bpms[i] + 1],
-            spo2_series=[base_spo2s[i], base_spo2s[i]],
-        )
-        diary_records.append(rec.model_dump())
-
 
 def add_diary_entry(
     user_id: str, 
@@ -72,7 +43,6 @@ def add_diary_entry(
 
 
 def get_all_user_diary_records(user_id: str) -> DiaryHistoryResponse:
-    init_seed_diary_records_if_empty(user_id)
     user_measurements: List[DiaryRecord] = []
     
     for entry in diary_records:
@@ -86,7 +56,6 @@ def get_all_user_diary_records(user_id: str) -> DiaryHistoryResponse:
 
 
 def get_user_diary_by_date(user_id: str, date_str: str) -> DiaryDateResponse:
-    init_seed_diary_records_if_empty(user_id)
     user_measurements: List[DiaryRecord] = []
     
     for entry in diary_records:

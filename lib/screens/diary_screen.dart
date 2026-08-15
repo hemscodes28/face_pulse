@@ -170,16 +170,6 @@ class _DiaryScreenState extends State<DiaryScreen> {
       else if (metric == 'dia') vals.add(scan.dia.toDouble());
     }
 
-    if (vals.isEmpty) {
-      vals = [71.0, 75.0, 78.0, 72.0, 74.0];
-    }
-
-    final rand = math.Random(metric.hashCode);
-    while (vals.length < count) {
-      double base = vals.first;
-      vals.insert(0, (base + (rand.nextDouble() * 4.0 - 2.0)).clamp(50.0, 120.0));
-    }
-
     if (vals.length > count) {
       vals = vals.sublist(vals.length - count);
     }

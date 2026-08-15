@@ -57,11 +57,7 @@ class _AppRouterState extends State<AppRouter> {
   String? _initialChatMessage;
 
   String _userName = 'Raj Mohan B';
-  final List<MeasurementMetrics> _scanHistory = [
-    const MeasurementMetrics(pulse: 71, sys: 114, dia: 70, hrv: 52, breath: 21, stress: 1.8, workload: 130, para: 35, bmi: 21.7),
-    const MeasurementMetrics(pulse: 75, sys: 117, dia: 74, hrv: 48, breath: 24, stress: 2.1, workload: 140, para: 30, bmi: 21.7),
-    const MeasurementMetrics(pulse: 78, sys: 120, dia: 76, hrv: 45, breath: 22, stress: 2.3, workload: 145, para: 28, bmi: 21.7),
-  ];
+  final List<MeasurementMetrics> _scanHistory = [];
 
   void _go(AppScreen screen) => setState(() => _screen = screen);
 
