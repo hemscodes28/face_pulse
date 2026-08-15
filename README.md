@@ -1,8 +1,8 @@
-# 🫀 Carefor
+# 🫀 CareFor
 
-**Face Pulse** is a state-of-the-art, non-invasive biometrics tracking application and computer vision engine. It estimates real-time vital signs—including **Heart Rate (BPM)**, **Heart Rate Variability (HRV)**, **Blood Oxygen (SpO2 %)**, **Blood Pressure (Systolic / Diastolic)**, and **Respiration Rate (br/min)**—using contactless **Remote Photoplethysmography (rPPG)** via a standard webcam or mobile camera.
+**CareFor** is a state-of-the-art, non-invasive biometrics tracking application and computer vision engine. It estimates real-time vital signs—including **Heart Rate (BPM)**, **Heart Rate Variability (HRV)**, **Blood Oxygen (SpO2 %)**, **Blood Pressure (Systolic / Diastolic)**, and **Respiration Rate (br/min)**—using contactless **Remote Photoplethysmography (rPPG)** via a standard webcam or mobile camera.
 
-Face Pulse combines a high-performance **Python OpenCV & MediaPipe Computer Vision Pipeline** with a **FastAPI backend server** and a **cross-platform Flutter frontend application**.
+CareFor combines a high-performance **Python OpenCV & MediaPipe Computer Vision Pipeline** with a **FastAPI backend server** and a **cross-platform Flutter frontend application**.
 
 ---
 
@@ -44,7 +44,7 @@ graph TD
     D --> F["⚡ POS rPPG DSP Engine (Butterworth + Welch PSD)"]
     F --> G["📊 Live Snapshot & Telemetry Endpoint (/latest)"]
     E --> G
-    G --> H["📱 Flutter Client UI (MeasurementScreen & Results)"]
+    G --> H["📱 CareFor Flutter Client UI (MeasurementScreen & Results)"]
     H --> I["💾 Local SQLite Database (face_pulse_users.db)"]
 ```
 
@@ -53,7 +53,7 @@ graph TD
 ## 📂 Project Structure
 
 ```
-Face Pulse/
+CareFor/
 ├── app/                                  # FastAPI Backend Application
 │   ├── main.py                           # API Entrypoint & Request/Response Logging Middleware
 │   ├── routes/                           # API Route Endpoints
@@ -71,8 +71,8 @@ Face Pulse/
 │   │   ├── signal_service.py             # Signal Analytics & Vitals Conversion
 │   │   └── onboarding_service.py         # Health Profile Calculation (BMI, DOB)
 │   └── models/                           # Enums & Data Models
-├── lib/                                  # Cross-Platform Flutter Frontend Application
-│   ├── main.dart                         # Flutter App Router & State Entrypoint
+├── lib/                                  # CareFor Flutter Frontend Application
+│   ├── main.dart                         # App Router & State Entrypoint
 │   ├── screens/                          # UI Screens
 │   │   ├── measurement_screen.dart       # Live Camera Scan, ECG Waveform & Polling
 │   │   ├── results_screen.dart           # Scan Vitals Summary & Star Rating Display
@@ -148,7 +148,7 @@ The backend server will start at `http://127.0.0.1:8000`. You can explore the in
 
 ---
 
-### 2. Frontend Setup (Flutter Application)
+### 2. Frontend Setup (CareFor Flutter Application)
 
 ```bash
 # Fetch Flutter packages
@@ -183,7 +183,7 @@ python test_engine.py
 ## 🛡 Disclaimer
 
 > [!IMPORTANT]
-> **Face Pulse** is designed for general wellness and self-awareness purposes only. It is **not a medical device** and is not intended to diagnose, treat, cure, or prevent any medical condition. Always consult a qualified healthcare professional for medical advice.
+> **CareFor** is designed for general wellness and self-awareness purposes only. It is **not a medical device** and is not intended to diagnose, treat, cure, or prevent any medical condition. Always consult a qualified healthcare professional for medical advice.
 
 ---
 
