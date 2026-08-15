@@ -209,6 +209,7 @@ class _MeasurementScreenState extends State<MeasurementScreen> with TickerProvid
 
     // 1. Call Backend API to start visual debugger pipeline with host fallback
     List<String> hostCandidates = [
+      'http://192.168.10.133:8000/api/v1/measurements',
       'http://127.0.0.1:8000/api/v1/measurements',
       'http://10.0.2.2:8000/api/v1/measurements',
       'http://localhost:8000/api/v1/measurements',

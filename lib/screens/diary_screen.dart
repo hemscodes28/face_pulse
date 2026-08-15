@@ -47,51 +47,61 @@ class _DiaryScreenState extends State<DiaryScreen> {
   }
 
   Future<void> _fetchDbDiaryHistory() async {
-    try {
-      final res = await http.get(Uri.parse('$_backendBaseUrl/history?user_id=user_default'));
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        final List measurements = data['measurements'] ?? [];
-        final List<MeasurementMetrics> fetched = [];
-        for (final m in measurements) {
-          double bpm = (m['heart_rate'] as num?)?.toDouble() ?? 72.0;
-          double spo2 = (m['spo2'] as num?)?.toDouble() ?? 98.0;
-          int sys = (m['systolic'] as num?)?.toInt() ?? 120;
-          int dia = (m['diastolic'] as num?)?.toInt() ?? 80;
-          int hrv = (m['hrv'] as num?)?.toInt() ?? 48;
-          int breath = (m['breath'] as num?)?.toInt() ?? 16;
-          int respHealth = (m['respiratory_health'] as num?)?.toInt() ?? 95;
-          int stars = (m['quality_stars'] as num?)?.toInt() ?? 5;
-          String label = m['quality_label'] ?? 'Good Video Quality';
+    List<String> hostCandidates = [
+      'http://192.168.10.133:8000/api/v1/diary',
+      'http://127.0.0.1:8000/api/v1/diary',
+      'http://10.0.2.2:8000/api/v1/diary',
+      'http://localhost:8000/api/v1/diary',
+    ];
 
-          fetched.add(MeasurementMetrics(
-            pulse: bpm.round(),
-            sys: sys,
-            dia: dia,
-            hrv: hrv,
-            breath: breath,
-            stress: 1.5,
-            workload: 130,
-            para: 30,
-            bmi: 22.0,
-            avgBpm: bpm,
-            qualityStars: stars,
-            qualityLabel: label,
-            spo2: spo2,
-            respiratoryHealth: respHealth,
-          ));
+    for (final baseUrl in hostCandidates) {
+      try {
+        final res = await http.get(Uri.parse('$baseUrl/history?user_id=user_default')).timeout(const Duration(seconds: 3));
+        if (res.statusCode == 200) {
+          final data = jsonDecode(res.body);
+          final List measurements = data['measurements'] ?? [];
+          final List<MeasurementMetrics> fetched = [];
+          for (final m in measurements) {
+            double bpm = (m['heart_rate'] as num?)?.toDouble() ?? 72.0;
+            double spo2 = (m['spo2'] as num?)?.toDouble() ?? 98.0;
+            int sys = (m['systolic'] as num?)?.toInt() ?? 120;
+            int dia = (m['diastolic'] as num?)?.toInt() ?? 80;
+            int hrv = (m['hrv'] as num?)?.toInt() ?? 48;
+            int breath = (m['breath'] as num?)?.toInt() ?? 16;
+            int respHealth = (m['respiratory_health'] as num?)?.toInt() ?? 95;
+            int stars = (m['quality_stars'] as num?)?.toInt() ?? 5;
+            String label = m['quality_label'] ?? 'Good Video Quality';
+
+            fetched.add(MeasurementMetrics(
+              pulse: bpm.round(),
+              sys: sys,
+              dia: dia,
+              hrv: hrv,
+              breath: breath,
+              stress: 1.5,
+              workload: 130,
+              para: 30,
+              bmi: 22.0,
+              avgBpm: bpm,
+              qualityStars: stars,
+              qualityLabel: label,
+              spo2: spo2,
+              respiratoryHealth: respHealth,
+            ));
+          }
+          if (mounted && fetched.isNotEmpty) {
+            setState(() {
+              _dbScanHistory = fetched;
+              _isLoadingHistory = false;
+            });
+          }
+          break;
         }
-        if (mounted && fetched.isNotEmpty) {
-          setState(() {
-            _dbScanHistory = fetched;
-            _isLoadingHistory = false;
-          });
-        }
+      } catch (e) {
+        debugPrint("Host $baseUrl unreachable for diary history: $e");
+      } finally {
+        if (mounted) setState(() => _isLoadingHistory = false);
       }
-    } catch (e) {
-      debugPrint("Error fetching DB diary history: $e");
-    } finally {
-      if (mounted) setState(() => _isLoadingHistory = false);
     }
   }
 
