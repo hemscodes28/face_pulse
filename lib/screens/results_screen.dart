@@ -127,29 +127,6 @@ class ResultsScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 16),
                   _ResultCard(
-                    title: 'Blood Pressure', subtitle: '',
-                    iconBg: const Color(0xFFECFEFF), icon: Icons.speed, iconColor: const Color(0xFF0891B2),
-                    child: Column(children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.baseline,
-                        textBaseline: TextBaseline.alphabetic,
-                        children: [
-                          Text('${metrics.sys}', style: GoogleFonts.hankenGrotesk(fontSize: 40, fontWeight: FontWeight.w700, color: const Color(0xFF111827))),
-                          Text(' / ', style: GoogleFonts.hankenGrotesk(fontSize: 32, fontWeight: FontWeight.w700, color: const Color(0xFFD1D5DB))),
-                          Text('${metrics.dia}', style: GoogleFonts.hankenGrotesk(fontSize: 40, fontWeight: FontWeight.w700, color: const Color(0xFF0891B2))),
-                          const SizedBox(width: 4),
-                          Text('mmHg', style: GoogleFonts.hankenGrotesk(fontSize: 11, fontWeight: FontWeight.w700, color: const Color(0xFF9CA3AF))),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      _LabeledGauge(label: 'Systolic', value: (metrics.sys - 90) / 80, labels: const ['90', '120', '170']),
-                      const SizedBox(height: 12),
-                      _LabeledGauge(label: 'Diastolic', value: (metrics.dia - 60) / 40, labels: const ['60', '70', '100']),
-                    ]),
-                  ),
-                  const SizedBox(height: 16),
-                  _ResultCard(
                     title: 'HRV (Heart Rate Var)', subtitle: 'Variation in time between heartbeats.',
                     iconBg: const Color(0xFFF5F3FF), icon: Icons.monitor_heart, iconColor: Colors.purple,
                     child: Center(child: Container(
@@ -190,39 +167,6 @@ class ResultsScreen extends StatelessWidget {
                       const SizedBox(height: 12),
                       _Gauge(value: metrics.respiratoryHealth / 100.0, labels: const ['60%', '80%', '100%']),
                     ]),
-                  ),
-                  const SizedBox(height: 16),
-                  _ResultCard(
-                    title: 'Stress Index', subtitle: 'Autonomic stress indicator.',
-                    iconBg: const Color(0xFFFFF7ED), icon: Icons.show_chart, iconColor: Colors.orange,
-                    child: Column(children: [
-                      _BigValue(value: metrics.stress.toStringAsFixed(1), unit: ''),
-                      const SizedBox(height: 12),
-                      _Gauge(value: metrics.stress / 10, labels: const ['0', '4', '10']),
-                    ]),
-                  ),
-                  const SizedBox(height: 16),
-                  _ResultCard(
-                    title: 'Cardiac Workload', subtitle: 'Heart effort to pump blood.',
-                    iconBg: const Color(0xFFF0FDFA), icon: Icons.monitor_heart_outlined, iconColor: const Color(0xFF0D9488),
-                    child: Column(children: [
-                      _BigValue(value: '${metrics.workload}', unit: 'mmHg/s'),
-                      const SizedBox(height: 12),
-                      _Gauge(value: (metrics.workload - 45) / 635, labels: const ['45', '90', '216', '680']),
-                    ]),
-                  ),
-                  const SizedBox(height: 16),
-                  _ResultCard(
-                    title: 'Parasympathetic Activity', subtitle: 'Stress recovery & relaxation.',
-                    iconBg: const Color(0xFFF0FDF4), icon: Icons.percent, iconColor: Colors.green,
-                    child: Center(child: Container(
-                      width: 112, height: 112,
-                      decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.green.shade100, width: 4), color: Colors.green.shade50.withOpacity(0.2)),
-                      child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                        Text('${metrics.para}', style: GoogleFonts.hankenGrotesk(fontSize: 32, fontWeight: FontWeight.w700, color: const Color(0xFF111827))),
-                        Text('%', style: GoogleFonts.hankenGrotesk(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.green, letterSpacing: 1)),
-                      ]),
-                    )),
                   ),
                   const SizedBox(height: 16),
                   _ResultCard(
