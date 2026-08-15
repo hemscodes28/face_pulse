@@ -97,11 +97,18 @@ class DebuggerThread(threading.Thread):
         processor = RPPGSignalProcessor(fs=self.target_fps)
 
         # ── Open webcam ───────────────────────────────────────────────────────
-        cap = cv2.VideoCapture(self.camera_id)
+        cap = cv2.VideoCapture(self.camera_id, cv2.CAP_DSHOW)
+        if not cap.isOpened():
+            logger.info(f"CAP_DSHOW default failed for index {self.camera_id}, trying default driver...")
+            cap = cv2.VideoCapture(self.camera_id)
+        if not cap.isOpened():
+            logger.info("Trying secondary camera index 1 with CAP_DSHOW...")
+            cap = cv2.VideoCapture(1, cv2.CAP_DSHOW)
+
         if not cap.isOpened():
             logger.error(
-                f"Cannot open camera {self.camera_id}. "
-                "Check that no other process is using it."
+                f"Cannot open camera {self.camera_id} or fallback camera. "
+                "Check that no other process (Zoom/OBS/Browser) is using it."
             )
             runtime.mark_stopped()
             return

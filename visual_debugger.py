@@ -592,7 +592,11 @@ class FacePulseVisualDebugger:
 
         cap = None
         if not self.test_mode:
-            cap = cv2.VideoCapture(self.camera_id)
+            cap = cv2.VideoCapture(self.camera_id, cv2.CAP_DSHOW)
+            if not cap.isOpened():
+                cap = cv2.VideoCapture(self.camera_id)
+            if not cap.isOpened():
+                cap = cv2.VideoCapture(1, cv2.CAP_DSHOW)
             if not cap.isOpened():
                 logger.error(f"Failed to open video capture device index {self.camera_id}.")
                 logger.info("Switching to Test Mode synthetic feed for validation...")
