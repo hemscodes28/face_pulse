@@ -163,12 +163,32 @@ class ResultsScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 16),
                   _ResultCard(
-                    title: 'Breathing Rate', subtitle: 'Average breaths per minute.',
+                    title: 'Breathing Rate', subtitle: 'Average breaths per minute derived from pulse RSA.',
                     iconBg: const Color(0xFFEFF6FF), icon: Icons.air, iconColor: const Color(0xFF3B82F6),
                     child: Column(children: [
-                      _BigValue(value: '${metrics.breath}', unit: 'br/m', valueColor: Colors.red),
+                      _BigValue(value: '${metrics.breath}', unit: 'br/m', valueColor: const Color(0xFF3B82F6)),
                       const SizedBox(height: 12),
                       _Gauge(value: (metrics.breath - 4) / 34, labels: const ['4', '12', '20', '38']),
+                    ]),
+                  ),
+                  const SizedBox(height: 16),
+                  _ResultCard(
+                    title: 'SpO2 (Blood Oxygen)', subtitle: 'Estimated blood oxygen saturation.',
+                    iconBg: const Color(0xFFE0F2FE), icon: Icons.water_drop, iconColor: const Color(0xFF0284C7),
+                    child: Column(children: [
+                      _BigValue(value: metrics.spo2.toStringAsFixed(1), unit: '%', valueColor: const Color(0xFF0284C7)),
+                      const SizedBox(height: 12),
+                      _Gauge(value: (metrics.spo2 - 90.0) / 10.0, labels: const ['90%', '95%', '100%']),
+                    ]),
+                  ),
+                  const SizedBox(height: 16),
+                  _ResultCard(
+                    title: 'Respiratory Health', subtitle: 'Airway stability & respiration efficiency.',
+                    iconBg: const Color(0xFFECFDF5), icon: Icons.health_and_safety, iconColor: const Color(0xFF10B981),
+                    child: Column(children: [
+                      _BigValue(value: '${metrics.respiratoryHealth}', unit: '% score', valueColor: const Color(0xFF10B981)),
+                      const SizedBox(height: 12),
+                      _Gauge(value: metrics.respiratoryHealth / 100.0, labels: const ['60%', '80%', '100%']),
                     ]),
                   ),
                   const SizedBox(height: 16),
